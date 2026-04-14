@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users  (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role VARCHAR(20) CHECK (role IN ('ADMIN', 'FIELD_AGENT', 'VALIDATOR')),
+    created_by UUID REFERENCES users(id), -- L'admin qui a créé ce compte
+    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -18,6 +20,10 @@ CREATE TABLE IF NOT EXISTS elections (
     type VARCHAR(50),
     status VARCHAR(20) DEFAULT 'OPEN'
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS only_one_active_election
+ON elections (status)
+WHERE status = 'OPEN';
 
 CREATE TABLE IF NOT EXISTS geography (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -37,6 +43,7 @@ CREATE TABLE IF NOT EXISTS candidates (
 -- 3. AUDIT & PROVENANCE
 CREATE TABLE IF NOT EXISTS source_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    election_id UUID REFERENCES elections(id) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
     file_type VARCHAR(50) NOT NULL, -- 'PDF_ARCHIVE' or 'SCAN_PV'
     storage_url TEXT NOT NULL,
