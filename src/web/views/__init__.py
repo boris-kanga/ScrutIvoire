@@ -1,6 +1,7 @@
 import os
 
 from flask import Flask
+from flask_jwt_extended import JWTManager
 
 from src.core.config import WORK_DIR, APP_NAME
 from src.core import config
@@ -22,5 +23,7 @@ def create_app():
     app.register_blueprint(public)
     # register api bp.
     app.register_blueprint(v1)
+
+    JWTManager(app)
 
     return app

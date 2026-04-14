@@ -4,6 +4,7 @@
 {% block body_class %}bg-background font-body text-on-surface min-h-screen flex flex-col items-center overflow-x-hidden antialiased{% endblock %}
 
 {% block content %}
+<link href="{{ url_for('static', filename='css/login.css') }}" rel="stylesheet"/>
 <!-- Background Decoration -->
 <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
     <div class="absolute -top-[10%] -left-[5%] w-[40%] h-[60%] bg-primary-container/5 rounded-full blur-[120px]"></div>
@@ -11,7 +12,7 @@
 </div>
 <main class="relative z-10 w-full px-4 pt-12 pb-16 flex flex-col items-center flex-grow">
     <!-- Login Card Container: 90% width on mobile, max-width 400px on desktop -->
-    <div class="w-[90%] max-w-[400px] bg-surface-container-lowest rounded-lg shadow-sm p-6 md:p-10">
+    <div id="form-container" class="w-[90%] max-w-[400px] bg-surface-container-lowest rounded-lg shadow-sm p-6 md:p-10">
         <!-- Logo Section -->
         <div class="flex flex-col items-center mb-8">
             <div class="w-16 h-16 mb-4 relative">

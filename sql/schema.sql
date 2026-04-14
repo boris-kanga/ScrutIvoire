@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS elections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
     type VARCHAR(50),
-    status VARCHAR(20) DEFAULT 'OPEN'
+    status VARCHAR(20) DEFAULT 'CREATED' CHECK (status IN ('OPEN', 'ARCHIVED', 'CREATED'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS only_one_active_election
