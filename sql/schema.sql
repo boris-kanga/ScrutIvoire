@@ -59,7 +59,14 @@ CREATE TABLE IF NOT EXISTS staging_results (
     validation_status VARCHAR(20) DEFAULT 'PENDING',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    validated_at TIMESTAMP
+    validated_at TIMESTAMP,
+
+    CONSTRAINT check_validation_logic
+        CHECK (
+            (validation_status = 'VALIDATED' AND validated_by IS NOT NULL AND validated_at IS NOT NULL)
+            OR
+            (validation_status != 'VALIDATED')
+        )
 );
 
 -- 5. CONSOLIDATED RESULTS (LA VÉRITÉ)
@@ -81,13 +88,4 @@ CREATE TABLE IF NOT EXISTS voter_registry (
     voter_id_hash VARCHAR(64) PRIMARY KEY,
     election_id UUID REFERENCES elections(id),
     voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-
-ALTER TABLE staging_results
-ADD CONSTRAINT IF NOT EXISTS check_validation_logic
-CHECK (
-    (validation_status = 'VALIDATED' AND validated_by IS NOT NULL AND validated_at IS NOT NULL)
-    OR
-    (validation_status != 'VALIDATED')
 );
