@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+
+<html class="light" lang="fr"><head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>ScrutIvoire - {% block title %}Connexion{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "outline-variant": "#dec1af",
+                      "on-primary-container": "#5f2c00",
+                      "surface-container-highest": "#e0e3e5",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed": "#81f8ce",
+                      "surface-variant": "#e0e3e5",
+                      "surface-container-high": "#e5e9eb",
+                      "on-error-container": "#93000a",
+                      "on-secondary-fixed": "#002117",
+                      "surface-tint": "#954a00",
+                      "primary-fixed": "#ffdcc6",
+                      "inverse-primary": "#ffb785",
+                      "on-primary-fixed": "#301400",
+                      "on-secondary-container": "#007257",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed": "#cae6ff",
+                      "background": "#f7fafc",
+                      "outline": "#8b7263",
+                      "secondary-fixed-dim": "#63dbb3",
+                      "on-primary": "#ffffff",
+                      "on-surface-variant": "#574235",
+                      "surface-container": "#ebeef0",
+                      "inverse-on-surface": "#eef1f3",
+                      "primary-fixed-dim": "#ffb785",
+                      "surface-container-low": "#f1f4f6",
+                      "on-surface": "#181c1e",
+                      "error": "#ba1a1a",
+                      "on-primary-fixed-variant": "#723700",
+                      "on-tertiary": "#ffffff",
+                      "primary": "#954a00",
+                      "primary-container": "#ff8200",
+                      "surface": "#f7fafc",
+                      "inverse-surface": "#2d3133",
+                      "tertiary-fixed-dim": "#8dcdff",
+                      "on-tertiary-fixed-variant": "#004b70",
+                      "tertiary": "#006493",
+                      "on-error": "#ffffff",
+                      "surface-bright": "#f7fafc",
+                      "on-background": "#181c1e",
+                      "tertiary-container": "#00aefc",
+                      "on-tertiary-container": "#003e5e",
+                      "on-tertiary-fixed": "#001e30",
+                      "secondary-container": "#81f8ce",
+                      "surface-dim": "#d7dadc",
+                      "secondary": "#006c52",
+                      "error-container": "#ffdad6",
+                      "on-secondary-fixed-variant": "#00513d"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Inter"],
+                      "body": ["Inter"],
+                      "label": ["Inter"]
+              }
+            },
+          }
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #FF8200 0%, #009B77 100%);
+        }
+        .primary-gradient-hover:hover {
+            filter: brightness(0.9);
+        }
+    </style>
+</head>
+<body class="{% block body_class %}bg-background font-body text-on-surface min-h-screen flex flex-col items-center overflow-x-hidden antialiased{% endblock %}">
+
+{% block content %}{% endblock %}
+<script src="https://code.jquery.com/jquery-4.0.0.js" integrity="sha256-9fsHeVnKBvqh3FB2HYu7g2xseAZ5MlN6Kz/qnkASV8U=" crossorigin="anonymous"></script>
+<script>
+    window.config_app = {
+        api_base: "{{ api_base }}"
+    };
+</script>
+{% block script %}{% endblock %}
+
+</body>
+
+</html>

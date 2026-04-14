@@ -1,0 +1,16 @@
+{# macros.html #}
+
+{% macro logo(style="", class_="") %}
+
+<svg class="{{class_}}" style="{{style}}" viewbox="0 0 100 100">
+    <defs>
+        <lineargradient id="logo-grad" x1="0%" x2="100%" y1="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#FF8200;stop-opacity:1"></stop>
+            <stop offset="100%" style="stop-color:#009B77;stop-opacity:1"></stop>
+        </lineargradient>
+    </defs>
+    <path d="M50 5 L89 27.5 L89 72.5 L50 95 L11 72.5 L11 27.5 Z" fill="url(#logo-grad)"></path>
+    <rect fill="white" fill-opacity="0.9" height="4" rx="2" width="40" x="30" y="40"></rect>
+    <path d="M50 35 L50 15" stroke="white" stroke-linecap="round" stroke-opacity="0.8" stroke-width="4"></path>
+</svg>
+{% endmacro %}

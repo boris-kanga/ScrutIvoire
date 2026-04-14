@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+
+{% block body_class %}bg-background font-body text-on-surface min-h-screen flex flex-col items-center overflow-x-hidden antialiased{% endblock %}
+
+{% block content %}
+<!-- Background Decoration -->
+<div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute -top-[10%] -left-[5%] w-[40%] h-[60%] bg-primary-container/5 rounded-full blur-[120px]"></div>
+    <div class="absolute -bottom-[10%] -right-[5%] w-[40%] h-[60%] bg-secondary-container/10 rounded-full blur-[120px]"></div>
+</div>
+<main class="relative z-10 w-full px-4 pt-12 pb-16 flex flex-col items-center flex-grow">
+    <!-- Login Card Container: 90% width on mobile, max-width 400px on desktop -->
+    <div class="w-[90%] max-w-[400px] bg-surface-container-lowest rounded-lg shadow-sm p-6 md:p-10">
+        <!-- Logo Section -->
+        <div class="flex flex-col items-center mb-8">
+            <div class="w-16 h-16 mb-4 relative">
+                <div class="absolute inset-0 primary-gradient opacity-10 blur-xl"></div>
+                {{ logo() }}
+            </div>
+            <h1 class="text-2xl font-black tracking-tighter bg-gradient-to-r from-[#ff8200] to-[#009b77] bg-clip-text text-transparent mb-1">
+                ScrutIvoire
+            </h1>
+            <h2 class="text-lg font-bold tracking-tight text-on-surface text-center">
+                Bienvenue sur ScrutIvoire
+            </h2>
+            <p class="text-xs text-on-surface-variant text-center mt-1 leading-relaxed">
+                Veuillez vous connecter pour accéder à votre espace
+            </p>
+        </div>
+        <!-- Login Form -->
+        <form id="login" action="#" class="space-y-4" method="POST">
+            <!-- Email Input: Increased height to 50px -->
+            <div class="space-y-1.5">
+                <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/80 ml-1" for="email">Adresse Email</label>
+                <div class="relative group">
+                        <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 group-focus-within:text-primary transition-colors">
+                            mail
+                        </span>
+                    <input class="w-full h-[50px] pl-12 pr-4 bg-surface-container-low border-none rounded-lg text-on-surface placeholder:text-on-surface-variant/40 focus:ring-2 focus:ring-primary/20 focus:bg-surface-container-lowest transition-all duration-300 outline-none" id="email" name="email" placeholder="nom@exemple.ci" required="" type="email"/>
+                </div>
+            </div>
+            <!-- Password Input: Increased height to 50px -->
+            <div class="space-y-1.5">
+                <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/80 ml-1" for="password">Mot de passe</label>
+                <div class="relative group">
+                        <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 group-focus-within:text-primary transition-colors">
+                            lock
+                        </span>
+                    <input class="w-full h-[50px] pl-12 pr-12 bg-surface-container-low border-none rounded-lg text-on-surface placeholder:text-on-surface-variant/40 focus:ring-2 focus:ring-primary/20 focus:bg-surface-container-lowest transition-all duration-300 outline-none" id="password" name="password" placeholder="••••••••" required="" type="password"/>
+                    <button class="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-on-surface transition-colors" type="button">
+                        <span class="material-symbols-outlined">visibility</span>
+                    </button>
+                </div>
+            </div>
+            <!-- Submit Button: Height consistent with inputs -->
+            <div class="pt-4">
+                <button class="w-full h-[50px] primary-gradient primary-gradient-hover text-on-primary font-bold rounded-lg shadow-sm transition-all duration-300 transform active:scale-[0.98] flex items-center justify-center gap-2" type="submit">
+                    Se connecter
+                    <span class="material-symbols-outlined text-lg">login</span>
+                </button>
+            </div>
+        </form>
+        <div class="mt-6 pt-6 border-t border-outline-variant/15 flex flex-col items-center">
+            <a class="text-xs font-medium text-primary hover:underline underline-offset-4" href="#">Mot de passe oublié ?</a>
+        </div>
+    </div>
+    <!-- External Illustration & Integrity Section -->
+    <div class="mt-16 w-[90%] max-w-[800px] grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+        <div class="md:col-span-1 hidden md:block">
+            <div class="aspect-square bg-surface-container rounded-lg overflow-hidden relative group shadow-sm">
+                <img class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" data-alt="abstract architectural geometry with clean white lines and soft orange sunset lighting reflecting on smooth surfaces" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDehM_Ro1D1Gh3GOyxAor9-8uCthU73PaIyVfyDvDDYy5PzDIQqHM7hqrudreCuQqdgsOfVKXOYokM2fKcSY6llrPI5PfrWGOzjdC7ljftEO0lDBNx5slK27_xZfiKWRgUxC693DIrcjqTabpTsM2bx538c6TU-C8o-JCzJChwQC6L6BcuFIfA6D8H7sHw3oA2cZxea90Uxtx170AsVmZQrYXnu9YbZ0xAyCat_2BBWwTvK0gpwQBJ1kSxVx7Vq1xmzTrAA6xFkMacK"/>
+                <div class="absolute inset-0 bg-primary/10 mix-blend-multiply"></div>
+            </div>
+        </div>
+        <div class="md:col-span-2 text-center md:text-left space-y-4">
+            <h3 class="text-lg font-bold text-on-surface">Sécurité et Intégrité</h3>
+            <p class="text-on-surface-variant text-sm leading-relaxed">
+                Chaque connexion est auditée pour garantir la transparence totale du processus démocratique.
+                Utilisez vos identifiants officiels fournis par la commission électorale.
+            </p>
+            <div class="flex flex-wrap justify-center md:justify-start gap-2 pt-2">
+                <span class="px-2.5 py-1 bg-secondary-container text-on-secondary-container text-[9px] font-bold uppercase tracking-widest rounded-full">Chiffrement AES-256</span>
+                <span class="px-2.5 py-1 bg-surface-container-high text-on-surface-variant text-[9px] font-bold uppercase tracking-widest rounded-full">Audit en temps réel</span>
+            </div>
+        </div>
+    </div>
+</main>
+<!-- Footer Component -->
+<footer class="w-full border-t border-[#dec1af]/15 bg-[#f1f4f6] dark:bg-[#181c1e]">
+    <div class="flex flex-col md:flex-row justify-between items-center px-6 md:px-12 py-8 gap-6">
+        <p class="font-['Inter'] text-[10px] md:text-xs tracking-wide uppercase font-medium text-[#181c1e]/40 dark:text-[#f7fafc]/40 text-center md:text-left">
+            © 2024 ScrutIvoire. Digital Monument to Democracy.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4 md:gap-8">
+            <a class="font-['Inter'] text-[10px] md:text-xs tracking-wide uppercase font-medium text-[#181c1e]/40 dark:text-[#f7fafc]/40 hover:text-[#954a00] dark:hover:text-[#ff8200] transition-opacity opacity-80 hover:opacity-100" href="#">Election Law</a>
+            <a class="font-['Inter'] text-[10px] md:text-xs tracking-wide uppercase font-medium text-[#181c1e]/40 dark:text-[#f7fafc]/40 hover:text-[#954a00] dark:hover:text-[#ff8200] transition-opacity opacity-80 hover:opacity-100" href="#">Privacy Policy</a>
+            <a class="font-['Inter'] text-[10px] md:text-xs tracking-wide uppercase font-medium text-[#181c1e]/40 dark:text-[#f7fafc]/40 hover:text-[#954a00] dark:hover:text-[#ff8200] transition-opacity opacity-80 hover:opacity-100" href="#">Technical Audit</a>
+        </div>
+    </div>
+</footer>
+{% endblock %}
+
+{% block script %}
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+{% endblock %}
+
