@@ -2,7 +2,7 @@ import functools
 
 from flask import current_app
 
-from kb_tools.tools import get_buffer
+from kb_tools.tools import get_func_args
 
 from src.infrastructure.database.pgdb import PgDB
 
@@ -11,7 +11,7 @@ from src.infrastructure.database.pgdb import PgDB
 def db_depends(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
-        func_args = get_buffer(func)
+        func_args = get_func_args(func)
         kw = {}
         if "db" in func_args:
             try:
@@ -21,7 +21,7 @@ def db_depends(func):
                 return await func(*args, **kwargs, **kw)
             finally:
                 if "db" in kw:
-                    kw["db"].close()
+                    await kw["db"].close()
 
         return await func(*args, **kwargs, **kw)
     return wrapper

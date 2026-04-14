@@ -65,7 +65,7 @@ class PgDB:
 
     async def connect(self):
         _p = str(self._dsn or (self._host, self._port, self.database))
-        _create = False
+        _create = self.as_client
 
         if not self.as_client:
             if PgDB._instance.get(_p) is None:
