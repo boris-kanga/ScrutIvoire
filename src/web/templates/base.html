@@ -86,6 +86,19 @@
         .primary-gradient-hover:hover {
             filter: brightness(0.9);
         }
+        .glass-panel {
+            background: rgba(247, 250, 252, 0.8);
+            backdrop-filter: blur(20px);
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, #e5e9eb 25%, #f1f4f6 50%, #e5e9eb 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite linear;
+        }
     </style>
 </head>
 <body class="{% block body_class %}bg-background font-body text-on-surface min-h-screen flex flex-col items-center overflow-x-hidden antialiased{% endblock %}">

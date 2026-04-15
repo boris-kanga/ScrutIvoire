@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+{% from "macros_admin.html" import nav %}
+
+{% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
+
+
+{% block title %}Loading...{% endblock %}
+{% block content %}
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-panel {
+        background: rgba(247, 250, 252, 0.8);
+        backdrop-filter: blur(20px);
+    }
+    #mobile-menu-toggle:checked ~ aside {
+        transform: translateX(0);
+    }
+    .logo-gradient {
+        background: linear-gradient(135deg, #FF8200 0%, #009B77 100%);
+    }
+
+    .skeleton {
+        background: linear-gradient(90deg, #e5e9eb 25%, #f1f4f6 50%, #e5e9eb 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite linear;
+    }
+    #mobile-sidebar-overlay.active { display: block; }
+    #sidebar.active { transform: translateX(0); }
+</style>
+
+
+<div id="loading-state">
+    <div class="flex h-screen overflow-hidden relative">
+        <!-- Mobile Sidebar Overlay -->
+        <div class="hidden fixed inset-0 bg-black/50 z-40 lg:hidden"
+             id="mobile-sidebar-overlay" onclick="toggleSidebar()"></div>
+        <!-- SideNavBar Skeleton -->
+        <aside style="background:white!important" class="bg-slate-900 fixed left-0 top-0 h-full w-64 flex flex-col py-6 px-4 z-50 transition-transform duration-300 -translate-x-full lg:translate-x-0"
+               id="sidebar">
+            <!-- Brand Logo Skeleton -->
+            <div class="mb-10 px-4 flex justify-between items-center">
+                <div>
+                    <div class="h-8 w-40 skeleton rounded-lg opacity-20"></div>
+                    <div class="h-3 w-24 skeleton mt-2 rounded opacity-10"></div>
+                </div>
+                <!-- Close button for mobile -->
+                <button class="lg:hidden text-white/50"
+                        onclick="toggleSidebar()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <!-- Navigation Links -->
+            <nav class="flex-1 space-y-2">
+                <!-- Active Item Skeleton -->
+                <div class="bg-white/10 rounded-lg px-4 py-3 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-30"></div>
+                    <div class="h-4 w-24 skeleton rounded opacity-30"></div>
+                </div>
+                <!-- Inactive Items -->
+                <div class="px-4 py-3 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-10"></div>
+                    <div class="h-4 w-28 skeleton rounded opacity-10"></div>
+                </div>
+                <div class="px-4 py-3 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-10"></div>
+                    <div class="h-4 w-20 skeleton rounded opacity-10"></div>
+                </div>
+                <div class="px-4 py-3 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-10"></div>
+                    <div class="h-4 w-32 skeleton rounded opacity-10"></div>
+                </div>
+            </nav>
+            <!-- Footer Tabs Skeleton -->
+            <div class="mt-auto pt-6 border-t border-white/5 space-y-2">
+                <div class="px-4 py-2 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-10"></div>
+                    <div class="h-3 w-16 skeleton rounded opacity-10"></div>
+                </div>
+                <div class="px-4 py-2 flex items-center space-x-3">
+                    <div class="w-5 h-5 skeleton rounded-full opacity-10"></div>
+                    <div class="h-3 w-16 skeleton rounded opacity-10"></div>
+                </div>
+            </div>
+        </aside>
+        <!-- Main Content Area -->
+        <main class="flex-1 lg:ml-64 overflow-y-auto">
+            <!-- TopAppBar Skeleton -->
+            <header class="sticky top-0 w-full bg-white/80 backdrop-blur-xl flex justify-between items-center px-4 md:px-8 h-16 z-40 border-b border-surface-container">
+                <div class="flex items-center space-x-4 md:space-x-8">
+                    <!-- Mobile Menu Toggle -->
+                    <button class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-surface-container"
+                            onclick="toggleSidebar()">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <!-- Search Bar Placeholder -->
+                    <div class="w-40 md:w-64 h-10 skeleton rounded-lg"></div>
+                    <!-- Nav Links Placeholder (Desktop only) -->
+                    <div class="hidden md:flex space-x-6">
+                        <div class="h-4 w-20 skeleton rounded opacity-40"></div>
+                        <div class="h-4 w-24 skeleton rounded opacity-40"></div>
+                        <div class="h-4 w-20 skeleton rounded opacity-40"></div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 md:space-x-4">
+                    <!-- CTA (Desktop) -->
+                    <div class="hidden sm:block h-8 w-28 skeleton rounded-full opacity-20"></div>
+                    <!-- Icons -->
+                    <div class="w-8 h-8 skeleton rounded-full"></div>
+                    <div class="w-10 h-10 skeleton rounded-full"></div>
+                </div>
+            </header>
+            <!-- Canvas Section -->
+            <div class="p-4 md:p-8 space-y-6 md:space-y-8">
+                <!-- Editorial Header Section -->
+                <div class="space-y-2">
+                    <div class="h-8 md:h-10 w-48 md:w-64 skeleton rounded-lg"></div>
+                    <div class="h-4 md:h-5 w-full max-w-md skeleton rounded-md opacity-60"></div>
+                </div>
+                <!-- KPI Grid: Responsive Columns -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                    <!-- KPI Card 1 -->
+                    <div class="bg-surface-container-lowest p-5 md:p-6 rounded-xl shadow-sm space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div class="w-10 h-10 skeleton rounded-lg"></div>
+                            <div class="w-12 h-6 skeleton rounded-full"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="h-4 w-24 skeleton rounded"></div>
+                            <div class="h-8 md:h-10 w-20 skeleton rounded-lg"></div>
+                        </div>
+                        <div class="h-10 md:h-12 w-full skeleton rounded-lg opacity-40"></div>
+                    </div>
+                    <!-- KPI Card 2 -->
+                    <div class="bg-surface-container-lowest p-5 md:p-6 rounded-xl shadow-sm space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div class="w-10 h-10 skeleton rounded-lg"></div>
+                            <div class="w-12 h-6 skeleton rounded-full"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="h-4 w-24 skeleton rounded"></div>
+                            <div class="h-8 md:h-10 w-24 skeleton rounded-lg"></div>
+                        </div>
+                        <div class="h-10 md:h-12 w-full skeleton rounded-lg opacity-40"></div>
+                    </div>
+                    <!-- KPI Card 3 -->
+                    <div class="bg-surface-container-lowest p-5 md:p-6 rounded-xl shadow-sm space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div class="w-10 h-10 skeleton rounded-lg"></div>
+                            <div class="w-12 h-6 skeleton rounded-full"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="h-4 w-24 skeleton rounded"></div>
+                            <div class="h-8 md:h-10 w-16 skeleton rounded-lg"></div>
+                        </div>
+                        <div class="h-10 md:h-12 w-full skeleton rounded-lg opacity-40"></div>
+                    </div>
+                    <!-- KPI Card 4 -->
+                    <div class="bg-surface-container-lowest p-5 md:p-6 rounded-xl shadow-sm space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div class="w-10 h-10 skeleton rounded-lg"></div>
+                            <div class="w-12 h-6 skeleton rounded-full"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="h-4 w-24 skeleton rounded"></div>
+                            <div class="h-8 md:h-10 w-32 skeleton rounded-lg"></div>
+                        </div>
+                        <div class="h-10 md:h-12 w-full skeleton rounded-lg opacity-40"></div>
+                    </div>
+                </div>
+                <!-- Main Content Row: Asymmetric Layout (Responsive stack) -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+                    <!-- Table Section (2/3 on desktop) -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-surface-container-lowest p-6 md:p-8 rounded-xl shadow-sm overflow-x-hidden">
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 space-y-4 sm:space-y-0">
+                                <div class="h-6 w-48 skeleton rounded"></div>
+                                <div class="h-8 w-24 skeleton rounded-lg"></div>
+                            </div>
+                            <!-- Table Rows -->
+                            <div class="space-y-6">
+                                <!-- Row 1 -->
+                                <div class="flex items-center space-x-4">
+                                    <div class="w-10 h-10 skeleton rounded-full shrink-0"></div>
+                                    <div class="flex-1 space-y-2 min-w-0">
+                                        <div class="h-4 w-3/4 max-w-[160px] skeleton rounded"></div>
+                                        <div class="h-3 w-1/2 max-w-[100px] skeleton rounded opacity-50"></div>
+                                    </div>
+                                    <div class="h-4 w-16 skeleton rounded hidden sm:block shrink-0"></div>
+                                    <div class="w-8 h-8 skeleton rounded-full shrink-0"></div>
+                                </div>
+                                <!-- Row 2 -->
+                                <div class="flex items-center space-x-4 border-t border-surface-container-low pt-6">
+                                    <div class="w-10 h-10 skeleton rounded-full shrink-0"></div>
+                                    <div class="flex-1 space-y-2 min-w-0">
+                                        <div class="h-4 w-3/4 max-w-[140px] skeleton rounded"></div>
+                                        <div class="h-3 w-1/2 max-w-[120px] skeleton rounded opacity-50"></div>
+                                    </div>
+                                    <div class="h-4 w-16 skeleton rounded hidden sm:block shrink-0"></div>
+                                    <div class="w-8 h-8 skeleton rounded-full shrink-0"></div>
+                                </div>
+                                <!-- Row 3 -->
+                                <div class="flex items-center space-x-4 border-t border-surface-container-low pt-6">
+                                    <div class="w-10 h-10 skeleton rounded-full shrink-0"></div>
+                                    <div class="flex-1 space-y-2 min-w-0">
+                                        <div class="h-4 w-3/4 max-w-[180px] skeleton rounded"></div>
+                                        <div class="h-3 w-1/2 max-w-[80px] skeleton rounded opacity-50"></div>
+                                    </div>
+                                    <div class="h-4 w-16 skeleton rounded hidden sm:block shrink-0"></div>
+                                    <div class="w-8 h-8 skeleton rounded-full shrink-0"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Sidebar Content (1/3 on desktop) -->
+                    <div class="space-y-6 md:space-y-8">
+                        <!-- Activity / Reports Feed -->
+                        <div class="bg-surface-container-lowest p-6 md:p-8 rounded-xl shadow-sm">
+                            <div class="h-5 w-40 skeleton rounded mb-6"></div>
+                            <div class="space-y-6">
+                                <div class="flex items-start space-x-4">
+                                    <div class="w-10 h-10 skeleton rounded-lg shrink-0"></div>
+                                    <div class="space-y-2 flex-1">
+                                        <div class="h-4 w-full skeleton rounded"></div>
+                                        <div class="h-3 w-2/3 skeleton rounded opacity-60"></div>
+                                    </div>
+                                </div>
+                                <div class="flex items-start space-x-4">
+                                    <div class="w-10 h-10 skeleton rounded-lg shrink-0"></div>
+                                    <div class="space-y-2 flex-1">
+                                        <div class="h-4 w-full skeleton rounded"></div>
+                                        <div class="h-3 w-1/2 skeleton rounded opacity-60"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Image Placeholder Section -->
+                        <div class="bg-surface-container-low p-6 rounded-xl space-y-4">
+                            <div class="aspect-video w-full skeleton rounded-lg"></div>
+                            <div class="space-y-2">
+                                <div class="h-4 w-2/3 skeleton rounded"></div>
+                                <div class="h-3 w-full skeleton rounded opacity-50"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Map / Regional Section Bento Grid style -->
+                <div class="bg-surface-container-lowest p-6 md:p-8 rounded-xl shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 space-y-4 sm:space-y-0">
+                        <div class="h-6 w-56 skeleton rounded"></div>
+                        <div class="h-8 w-32 skeleton rounded-lg"></div>
+                    </div>
+                    <div class="h-[200px] md:h-[300px] w-full skeleton rounded-xl opacity-30"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobile-sidebar-overlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+            // Prevent body scroll when menu is open
+            document.body.classList.toggle('overflow-hidden');
+        }
+    </script>
+</div>
+
+<div id="election-state"></div>
+
+<div id="empty-state" style="display:none">
+    <input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
+    <!-- SideNavBar: Charcoal Background -->
+    {{ nav(mobile_toggle_menu_id="mobile-menu-toggle") }}
+
+    <!-- TopNavBar -->
+    <header class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
+        <div class="flex items-center gap-4 flex-1">
+            <label class="lg:hidden text-slate-600 cursor-pointer p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+                   for="mobile-menu-toggle">
+                <span class="material-symbols-outlined">menu</span>
+            </label>
+            <div class="relative w-full max-w-xs hidden sm:block">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"
+              data-icon="search">search</span>
+                <input class="w-full bg-surface-container-low border-none rounded-lg pl-10 py-2 text-sm focus:ring-2 focus:ring-primary/30"
+                       placeholder="Rechercher..." type="text"/>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 lg:gap-6">
+            <div class="hidden md:flex items-center gap-2 px-3 py-1.5 bg-secondary-container/30 text-on-secondary-container rounded-full text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+                System Online
+            </div>
+            <div class="flex items-center gap-2 lg:gap-4">
+                <button class="material-symbols-outlined text-slate-500 p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+                        data-icon="notifications">notifications
+                </button>
+                <div class="w-9 h-9 rounded-lg overflow-hidden border border-outline-variant/30">
+                    <img alt="Administrator Profile"
+                         class="w-full h-full object-cover"
+                         src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBopSoipEE-bYKA6v4yirBrRxfVa_U-RTFbqr-iYZe6ftM39SDSTNxsu65Z-rROiNot6DlAGK3BNdK_gC4igrkbh3YwVZSngnVXrKiZok9GxrT-XyTJns-F1mOGblet7-HcVfwewdNGiExVnkJrY4-j3PYu9w-gsghf2muC-M0ggNbfvNakHJcQJqgavTdL79o5AwvFqZHjZonKdIagqCgsJSKNm7fuxmiVXVDE2l-VchI3uBXUqAXGlJ-a1MZcXtB5C8MviVVx7sl"/>
+                </div>
+            </div>
+        </div>
+    </header>
+    <!-- Main Content -->
+    <main class="lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 lg:p-12 flex flex-col items-center justify-center relative overflow-hidden">
+        <!-- Background Texture -->
+        <div class="absolute inset-0 -z-10 opacity-5 pointer-events-none">
+            <img alt="Background Texture" class="w-full h-full object-cover"
+                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoAxSnvETD2D2VprXxOb6ntRaNmAYXePoQ4fNVqqb6TCsn8kPImSjKuPUgUGb5pwbkicKpy1luMpnlNKOUxjcJ9tT5agCVal2gveE8RFNDfHVsmC_XHArIjyA-HmIDN9tgzKp-Ne5XFaxZSsL6zMVDxPP-SpYZdpKf-d70P7x_NT39a8F-zgZkZyH-2GqFXmvpwog8CWInTg22OSHP3C4MTbdTje-y4i3C1oT1rROmnGXjmtG17M--HV9kfvql9wz-R7d9FekC89f_"/>
+        </div>
+        <!-- Status Indicator (Primary Center Content) -->
+        <div class="mb-12 lg:mb-16 flex items-center gap-2 px-8 py-3 bg-error-container text-on-error-container rounded-full text-[10px] sm:text-[12px] font-black tracking-[0.2em] uppercase text-center shadow-sm">
+    <span class="material-symbols-outlined text-[16px] sm:text-[20px]"
+          data-icon="error"
+          style="font-variation-settings: 'FILL' 1;">error</span>
+            AUCUNE ÉLECTION ACTIVE
+        </div>
+        <!-- Interactive Action Cards -->
+        <div class="flex flex-col lg:grid lg:grid-cols-2 gap-6 lg:gap-10 w-full max-w-5xl items-center lg:items-stretch">
+            <!-- Card A: Create -->
+            <div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-6 sm:p-10 flex flex-col items-center lg:items-start text-center lg:text-left transition-all duration-300 hover:shadow-2xl border border-surface-container-highest/50 w-[92%] sm:w-[90%] lg:w-full">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-bl-full -mr-8 -mt-8"></div>
+                <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-secondary-container flex items-center justify-center text-on-secondary-container mb-6 sm:mb-8 shadow-md">
+            <span class="material-symbols-outlined text-3xl sm:text-4xl"
+                  data-icon="add_circle"
+                  style="font-variation-settings: 'FILL' 1;">add_circle</span>
+                </div>
+                <h3 class="text-xl sm:text-2xl font-bold text-on-surface mb-3 sm:mb-4 tracking-tight">
+                    Créer une Nouvelle Élection</h3>
+                <p class="text-sm text-on-surface-variant mb-8 sm:mb-10 leading-relaxed max-w-md">
+                    Initialiser un nouveau scrutin (Présidentielle,
+                    Législatives...). Configurez les candidats et la géographie
+                    pour ouvrir la collecte.
+                </p>
+                <button class="w-full lg:w-auto mt-auto flex items-center justify-center gap-3 px-8 sm:px-12 py-4 sm:py-5 bg-secondary text-white rounded-xl font-bold tracking-tight text-sm hover:brightness-110 transition-all active:scale-95 shadow-lg shadow-secondary/20 min-h-[56px]">
+                    + DÉMARRER
+                    <span class="material-symbols-outlined text-sm"
+                          data-icon="arrow_forward">arrow_forward</span>
+                </button>
+            </div>
+            <!-- Card B: Archives -->
+            <div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-6 sm:p-10 flex flex-col items-center lg:items-start text-center lg:text-left transition-all duration-300 hover:shadow-2xl border border-surface-container-highest/50 w-[92%] sm:w-[90%] lg:w-full">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -mr-8 -mt-8"></div>
+                <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary-fixed flex items-center justify-center text-on-primary-fixed mb-6 sm:mb-8 shadow-md">
+            <span class="material-symbols-outlined text-3xl sm:text-4xl"
+                  data-icon="history"
+                  style="font-variation-settings: 'FILL' 1;">history</span>
+                </div>
+                <h3 class="text-xl sm:text-2xl font-bold text-on-surface mb-3 sm:mb-4 tracking-tight">
+                    Consulter les Archives</h3>
+                <p class="text-sm text-on-surface-variant mb-8 sm:mb-10 leading-relaxed max-w-md">
+                    Accéder aux rapports, audits et résultats consolidés des
+                    scrutins passés. Profitez d'une vue d'ensemble sur
+                    l'historique
+                    démocratique.
+                </p>
+                <a href="{{ url_for('admin.archives') }}" class="w-full lg:w-auto mt-auto flex items-center justify-center gap-3 px-8 sm:px-12 py-4 sm:py-5 bg-primary text-white rounded-xl font-bold tracking-tight text-sm hover:brightness-110 transition-all active:scale-95 shadow-lg shadow-primary/20 min-h-[56px]">
+                <span class="material-symbols-outlined text-sm"
+                      data-icon="folder"
+                      style="font-variation-settings: 'FILL' 1;">folder</span>
+                    OUVRIR L'HISTORIQUE
+                </a>
+            </div>
+        </div>
+        <!-- Meta Footer -->
+        <div class="mt-12 lg:mt-24 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-4 sm:gap-8 lg:gap-12 text-[10px] uppercase tracking-[0.2em] font-bold text-outline text-center opacity-60">
+            <div class="flex items-center gap-2 whitespace-nowrap">
+                <span class="w-2 h-2 rounded-full bg-secondary"></span>
+                CORE VERSION 4.2.0
+            </div>
+            <div class="flex items-center gap-2 whitespace-nowrap">
+                <span class="w-2 h-2 rounded-full bg-outline"></span>
+                ENCRYPTED NODES: 12
+            </div>
+            <div class="flex items-center gap-2 whitespace-nowrap">
+                <span class="w-2 h-2 rounded-full bg-outline"></span>
+                LAST SYNC: JUST NOW
+            </div>
+        </div>
+    </main>
+    <!-- Bottom Nav for Mobile -->
+    <div class="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container-highest flex lg:hidden z-40">
+        <a class="flex-1 flex flex-col items-center justify-center text-primary"
+           href="#">
+        <span class="material-symbols-outlined text-[24px]"
+              style="font-variation-settings: 'FILL' 1;">dashboard</span>
+            <span class="text-[10px] font-bold mt-1">Accueil</span>
+        </a>
+        <a class="flex-1 flex flex-col items-center justify-center text-slate-400"
+           href="#">
+            <span class="material-symbols-outlined text-[24px]">ballot</span>
+            <span class="text-[10px] font-bold mt-1">Scrutins</span>
+        </a>
+        <label class="flex-1 flex flex-col items-center justify-center text-slate-400 cursor-pointer"
+               for="mobile-menu-toggle">
+            <span class="material-symbols-outlined text-[24px]">menu</span>
+            <span class="text-[10px] font-bold mt-1">Plus</span>
+        </label>
+    </div>
+    <!-- Mobile Padding for Bottom Nav -->
+    <div class="h-16 lg:hidden"></div>
+</div>
+{% endblock %}
+
+
+{% block script %}
+<script src="{{ url_for('static', filename='js/admin_overview.js') }}"></script>
+{% endblock %}

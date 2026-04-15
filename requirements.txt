@@ -5,6 +5,8 @@ werkzeug
 
 hypercorn
 flask[async]>=3.1.3
+
+flask_socketio
 dotenv
 pdfplumber
 
@@ -13,6 +15,7 @@ botocore
 
 
 asyncpg
+redis
 sqlparse
 
 pyjwt

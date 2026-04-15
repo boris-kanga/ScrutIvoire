@@ -1,0 +1,59 @@
+{# macros_admin.html #}
+
+{% from "macros.html" import logo %}
+
+{% macro nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="live") %}
+
+{% set class_active="flex items-center gap-4 py-4 px-5 rounded-xl transition-all duration-200 text-white bg-primary border-r-4 border-primary font-bold font-inter tracking-tight text-sm" %}
+{% set class_inactive="flex items-center gap-4 py-4 px-5 rounded-xl transition-all duration-200 text-slate-400 hover:text-slate-700 hover:bg-black/5 font-inter tracking-tight text-sm font-medium" %}
+<aside id="admin-nav" style="background:white!important" class="fixed left-0 top-0 h-full w-[280px] bg-charcoal-sidebar shadow-xl flex flex-col py-8 px-6 z-50 transition-transform duration-300 -translate-x-full lg:translate-x-0 peer-checked:translate-x-0">
+        <div class="flex justify-between items-center mb-10 lg:px-4">
+            <div class="flex items-center gap-3">
+                {{ logo(style="width:80px;height:80px") }}
+                <div>
+                    <h1 class="text-2xl font-black tracking-tighter bg-gradient-to-r from-[#ff8200] to-[#009b77] bg-clip-text text-transparent mb-1">
+                        ScrutIvoire</h1>
+                    <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-bold mt-1">
+                        Sovereign Control</p>
+                </div>
+            </div>
+            <label class="lg:hidden text-slate-400 p-2 cursor-pointer"
+                   for="{{ mobile_toggle_menu_id }}">
+                <span class="material-symbols-outlined">close</span>
+            </label>
+        </div>
+        <nav class="flex-1 space-y-2 lg:px-0">
+            <a class="{% if menu=='live' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
+               href="{{ url_for('admin.index') }}">
+                <span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+                Résultats Live
+            </a>
+            <a class="{% if menu=='archives' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
+               href="{{ url_for('admin.archives') }}">
+            <span class="material-symbols-outlined" data-icon="inventory_2" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+            Archives
+            </a>
+            <a class="{% if menu=='users' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
+               href="#">
+        <span class="material-symbols-outlined"
+              data-icon="group">group</span>
+                Users
+            </a>
+            <a class="{% if menu=='audit' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
+               href="#">
+                <span class="material-symbols-outlined" data-icon="security">security</span>
+                Audit Logs
+            </a>
+        </nav>
+        <div class="mt-auto pt-6 lg:px-4 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-full bg-white/5 overflow-hidden border-2 border-white/10 shrink-0">
+                <img alt="Admin Avatar" class="w-full h-full object-cover"
+                     src="https://lh3.googleusercontent.com/aida-public/AB6AXuCO1u8Iixex-v8PBvw9pYhXLzH12xaGuzpZo5qmBMSEWKygAUQ7ACNhokKkUDmzxQyWKoLe6B2cWP9VOtSiq8wjIgN_58ga9oHCvDt33ZwXpFXJQrpT-vx_g0AMKskALO2bAiMZau5MCYhx8aK277bhQJ2ypHTBOBjLh_RrM0Odophy4SpJDA1rE_849ImBQJR2WqXpT0vwKo5KLOxHXjHCsiwlSDfFkWuHAlVpUoGW3WO6CjikUHrFimoG2cUCneE5LjFE9zc-joBR"/>
+            </div>
+            <div class="overflow-hidden">
+                <p class="text-white text-sm font-bold truncate">Admin</p>
+                <p class="text-slate-500 text-xs truncate">Superuser</p>
+            </div>
+        </div>
+    </aside>
+{% endmacro %}

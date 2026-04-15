@@ -18,12 +18,12 @@ CREATE TABLE IF NOT EXISTS elections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
     type VARCHAR(50),
-    status VARCHAR(20) DEFAULT 'CREATED' CHECK (status IN ('OPEN', 'ARCHIVED', 'CREATED'))
+    status VARCHAR(20) DEFAULT 'DRAFT' CHECK (status IN ('OPEN', 'ARCHIVED', 'DRAFT'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS only_one_active_election
 ON elections (status)
-WHERE status = 'OPEN';
+WHERE status = 'OPEN' OR status='DRAFT';
 
 CREATE TABLE IF NOT EXISTS geography (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -49,7 +49,10 @@ CREATE TABLE IF NOT EXISTS source_documents (
     storage_url TEXT NOT NULL,
     integrity_hash VARCHAR(64) NOT NULL,
     uploaded_by UUID REFERENCES users(id) NOT NULL, -- Qui a chargé le fichier
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- verification des integrite des fichiers aux etapes cles
+    last_integrity_check TIMESTAMP,
+    integrity_status VARCHAR(20) DEFAULT 'PENDING' CHECK (integrity_status IN ('OK', 'FAILED', 'PENDING'))
 );
 
 -- 4. STAGING (PIPELINE DE TRAITEMENT)

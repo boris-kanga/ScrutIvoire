@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+{% from "macros_admin.html" import nav %}
+
+{% block body_class %}bg-background font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container{% endblock %}
+
+
+{% block title %}Loading...{% endblock %}
+{% block content %}
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        vertical-align: middle;
+    }
+    .scanline {
+        height: 4px;
+        background: linear-gradient(to bottom, rgba(0, 123, 255, 0), rgba(0, 123, 255, 1), rgba(0, 123, 255, 0));
+        box-shadow: 0 0 15px rgba(0, 123, 255, 0.8);
+        position: absolute;
+        width: 100%;
+        top: 0;
+        animation: scan 4s linear infinite;
+    }
+    @keyframes scan {
+        0% { top: 0%; }
+        100% { top: 100%; }
+    }
+    @keyframes pulse-soft {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+    .animate-pulse-soft {
+        animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+</style>
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white dark:bg-slate-950/80 backdrop-blur-xl shadow-sm">
+    <div class="flex items-center gap-4">
+        <button class="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span>Annuler</span>
+        </button>
+    </div>
+    <div class="flex items-center gap-3">
+        <h1 class="text-slate-900 font-bold tracking-tight text-lg">Ingestion
+            d'Archive Officielle : PV_ZONE_CENTRE.pdf</h1>
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-tertiary-container/20 rounded-full text-tertiary text-xs font-bold uppercase tracking-wider animate-pulse-soft">
+            <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span>
+            </span>
+            ANALYSE EN COURS
+        </div>
+    </div>
+    <div class="flex items-center gap-4">
+        <button class="px-5 py-2 bg-slate-100 text-slate-400 font-bold rounded-lg cursor-not-allowed text-sm">
+            Confirmer l'Archivage
+        </button>
+        <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden ring-2 ring-white shadow-sm">
+            <img alt="Analyst Profile" class="w-full h-full object-cover"
+                 data-alt="Professional headshot of a government analyst in a suit against a neutral background"
+                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuALidPJHWARt9kbThig_por0TAWeyY5yRFpIg4qWnVxWjZN5-ZeY1Wnulb7bbv6jB5rQboyarhVGbuLrGR0Vv8XNQJY3znapm-jzhM7q4Q3ZpuWuTI8VP1zjIARFQ9YPlXzFyIN9ZGY9V1cPCm4SyZb6vagoQRljwGfRuGsxULLs73_JqTE22LT7ew7YHfsf0qbHdGMyBiS3C4lAaAI7b77P2uAe7gzM3A5aRjkk6IQ70CuoZtO33YA1tdiUYgmOneGQx62GYGQcAwq"/>
+        </div>
+    </div>
+</header>
+<main class="flex h-screen pt-16 overflow-hidden">
+    <!-- Left Section (60%): Document Viewer -->
+    <section class="w-3/5 bg-slate-900 flex flex-col relative overflow-hidden">
+        <div class="flex-1 flex items-center justify-center p-12">
+            <!-- PDF Simulation -->
+            <div class="relative bg-white shadow-2xl w-full max-w-2xl aspect-[1/1.414] rounded-sm overflow-hidden flex flex-col">
+                <!-- Laser Scanline -->
+                <div class="scanline z-20"></div>
+                <!-- Document Content -->
+                <div class="p-10 flex flex-col gap-8 opacity-90">
+                    <div class="flex justify-between items-start border-b border-slate-200 pb-6">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-xl">
+                                RÉPUBLIQUE DE CÔTE D'IVOIRE</h3>
+                            <p class="text-xs text-slate-500 font-medium">Union
+                                - Discipline - Travail</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs font-bold text-slate-800">PV N°:
+                                2023-CH-042</p>
+                            <p class="text-[10px] text-slate-400">Date:
+                                24/10/2023</p>
+                        </div>
+                    </div>
+                    <div class="space-y-4">
+                        <h4 class="text-sm font-bold text-slate-700 uppercase tracking-widest">
+                            Procès-Verbal de Centralisation</h4>
+                        <div class="grid grid-cols-3 gap-1 bg-slate-50 p-1">
+                            <div class="bg-slate-200/50 p-2 text-[10px] font-bold text-slate-600">
+                                RÉGION
+                            </div>
+                            <div class="bg-slate-200/50 p-2 text-[10px] font-bold text-slate-600">
+                                CANDIDAT
+                            </div>
+                            <div class="bg-slate-200/50 p-2 text-[10px] font-bold text-slate-600">
+                                SUFFRAGES
+                            </div>
+                            <!-- Row 1 -->
+                            <div class="p-2 text-[10px] text-slate-500 border-b border-slate-100">
+                                LAGUNES
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-medium border-b border-slate-100">
+                                ALASSANE O.
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-bold border-b border-slate-100">
+                                12,450
+                            </div>
+                            <!-- Row 2 -->
+                            <div class="p-2 text-[10px] text-slate-500 border-b border-slate-100">
+                                GBÊKÊ
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-medium border-b border-slate-100">
+                                HENRI K. B.
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-bold border-b border-slate-100">
+                                8,920
+                            </div>
+                            <!-- Row 3 -->
+                            <div class="p-2 text-[10px] text-slate-500 border-b border-slate-100">
+                                GÔH
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-medium border-b border-slate-100">
+                                LAURENT G.
+                            </div>
+                            <div class="p-2 text-[10px] text-slate-800 font-bold border-b border-slate-100">
+                                15,100
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Graphic Signature Area -->
+                    <div class="mt-auto flex justify-between pt-10">
+                        <div class="w-24 h-24 border-2 border-dashed border-slate-200 rounded flex items-center justify-center grayscale">
+                            <img alt="Official Seal" class="opacity-20 w-16"
+                                 data-alt="A purple wax seal stamp on textured paper with faint official crest"
+                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhRzbhUf4Bhp4TpE1JeyAL3YEV2b-pYhPPSSi6dlTfwY7LqKOGygYIKx45Cf76PIidiabnS6jHs-_X0wCcYgYWGB6odG890WYmf297RirvLQ8RqQE4AFP7cykGZltVLJHejjrq58HW0vc4X1D9L5sa29C98Eop6mli22TJGjD7oPIwpzQwgGvV_Bue5zJVEOgIEiuKvbu1PPDRQ5Pf08nXoNgOqpWCPBfm6Wyf7yk934HD_ktGd3Xyt1h3rfAR2_DatgXy3-sIudGY"/>
+                        </div>
+                        <div class="text-right italic text-slate-400 text-xs">
+                            <p>Signé numériquement par le délégué</p>
+                            <p>ID: 992-KLA-112</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Floating Toolbar -->
+        <div class="absolute bottom-10 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md px-6 py-3 rounded-full flex items-center gap-6 text-white border border-white/10 shadow-2xl">
+            <div class="flex items-center gap-4">
+                <button class="hover:bg-white/20 p-1.5 rounded-full transition-colors">
+                    <span class="material-symbols-outlined">zoom_out</span>
+                </button>
+                <span class="text-xs font-bold tracking-widest uppercase">75%</span>
+                <button class="hover:bg-white/20 p-1.5 rounded-full transition-colors">
+                    <span class="material-symbols-outlined">zoom_in</span>
+                </button>
+            </div>
+            <div class="w-px h-6 bg-white/20"></div>
+            <div class="flex items-center gap-4">
+                <button class="hover:bg-white/20 p-1.5 rounded-full transition-colors">
+                    <span class="material-symbols-outlined">navigate_before</span>
+                </button>
+                <span class="text-xs font-bold">1 / 4</span>
+                <button class="hover:bg-white/20 p-1.5 rounded-full transition-colors">
+                    <span class="material-symbols-outlined">navigate_next</span>
+                </button>
+            </div>
+            <div class="w-px h-6 bg-white/20"></div>
+            <button class="hover:bg-white/20 p-1.5 rounded-full transition-colors">
+                <span class="material-symbols-outlined">download</span>
+            </button>
+        </div>
+    </section>
+    <!-- Right Section (40%): Data Structure -->
+    <aside class="w-2/5 bg-white flex flex-col border-l border-slate-100 shadow-inner overflow-y-auto">
+        <!-- Metadata Header -->
+        <div class="p-8 border-b border-slate-50 bg-slate-50/50">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-slate-900 font-extrabold text-2xl tracking-tighter">
+                    Structure de Données Détectée</h2>
+                <div class="text-right">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                        Confiance OCR
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl font-black text-secondary">94%</span>
+                        <div class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                            <div class="h-full bg-secondary w-[94%]"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold">
+<span class="material-symbols-outlined text-sm mr-1">check_circle</span> TABLEAU DÉTECTÉ
+                    </span>
+                <span class="inline-flex items-center px-3 py-1 rounded-full bg-tertiary-container text-on-tertiary-container text-[10px] font-bold">
+<span class="material-symbols-outlined text-sm mr-1">history_edu</span> SIGNATURE OK
+                    </span>
+                <span class="inline-flex items-center px-3 py-1 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">
+<span class="material-symbols-outlined text-sm mr-1">location_on</span> GEO-TAGGED
+                    </span>
+            </div>
+        </div>
+        <!-- Accordions Stack -->
+        <div class="flex-1">
+            <!-- Component A: Scrutin & Candidats -->
+            <div class="border-b border-slate-50 group">
+                <button class="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary">
+                            <span class="material-symbols-outlined"
+                                  data-weight="fill">ballot</span>
+                        </div>
+                        <div class="text-left">
+                            <h3 class="font-bold text-slate-800">Scrutin &amp;
+                                Candidats</h3>
+                            <p class="text-xs text-slate-400">3 candidats
+                                identifiés</p>
+                        </div>
+                    </div>
+                    <span class="material-symbols-outlined text-slate-400 group-hover:rotate-180 transition-transform">expand_more</span>
+                </button>
+                <div class="px-6 pb-8 grid grid-cols-2 gap-4">
+                    <!-- Candidate 1 -->
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3 mb-3">
+                            <img alt="Alassane"
+                                 class="w-8 h-8 rounded-full object-cover"
+                                 data-alt="Close-up portrait of an African man with grey hair in professional lighting"
+                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYffbIknJ1VY4sCouI5ZbzUGfQAViBaqnSNhKSy-svbEQzoTe9ItfYhlRAa0O4fQplcjXzjNp6KIMGvgXVjmvQevYXYAprKFIZYzauxe_e7M4KKMBOkBlJrD6GeD_8tlV6xlN2MNnn8-oWfWSFmjwY5PYv6SwM5qVmdwEZxkJSd1QpN-dCNYZ8dtvUsiptDkg3VE7Jo5bStsE0lcLHXVAE9uHcAffqYelfqdTwO3OhMy3ikxVv5OUOYbGpfxL1CUixu26f_UMX5y5m"/>
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">
+                                    Candidat A</p>
+                                <p class="text-xs font-bold text-slate-800">A.
+                                    Ouattara</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] px-2 py-0.5 bg-secondary/10 text-secondary rounded-full font-bold">Match 100%</span>
+                            <span class="text-xs font-bold text-slate-600">RHDP</span>
+                        </div>
+                    </div>
+                    <!-- Candidate 2 -->
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3 mb-3">
+                            <img alt="Bedie"
+                                 class="w-8 h-8 rounded-full object-cover"
+                                 data-alt="Portrait of an older distinguished African man with glasses in soft studio light"
+                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEnQDLT-3iG7CYWZAzpPSlFrPDU0O1UYRzqQW4KFSgb3ZLyFzYAxjhzn47t1Zg9lI_KDIHkZlirhkP29835wdu2vdSPgK94a9kKrK9455cd-lZEhaTOBDCgg2o3gBhdMRZlBYHzYUCN7m7hv8ZCjSGw8IlhI_FkicyH5pPfyaXy2QxJWZs8CEksEVYka8R1iRCW5qlCd8AqV6VOgLsPHqNFFW4xqc5iv-Wc3AGKppep3P1FSZ_lKuhycRB5kJ_fymqqS6WrKmrU5QG"/>
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">
+                                    Candidat B</p>
+                                <p class="text-xs font-bold text-slate-800">H.
+                                    K. Bédié</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold">Match 85%</span>
+                            <span class="text-xs font-bold text-slate-600">PDCI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Component B: Hiérarchie Géographique (Open) -->
+            <div class="border-b border-slate-50 bg-slate-50/30">
+                <button class="w-full flex items-center justify-between p-6">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-tertiary-container/10 flex items-center justify-center text-tertiary">
+                            <span class="material-symbols-outlined"
+                                  data-weight="fill">map</span>
+                        </div>
+                        <div class="text-left">
+                            <h3 class="font-bold text-slate-800">Hiérarchie
+                                Géographique</h3>
+                            <p class="text-xs text-slate-400">Cartographie des
+                                points de collecte</p>
+                        </div>
+                    </div>
+                    <span class="material-symbols-outlined text-slate-900">expand_less</span>
+                </button>
+                <div class="px-8 pb-8 space-y-4">
+                    <!-- Tree View Simulation -->
+                    <div class="relative pl-4 border-l-2 border-slate-200 ml-2">
+                        <div class="flex items-center gap-3 py-2">
+                            <span class="material-symbols-outlined text-slate-400 text-lg">location_city</span>
+                            <span class="text-sm font-bold text-slate-700">Abidjan (12 Communes)</span>
+                        </div>
+                        <!-- Sub-level -->
+                        <div class="relative pl-6 border-l-2 border-slate-200 ml-2 mt-2 space-y-4">
+                            <div class="flex flex-col gap-2">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <span class="material-symbols-outlined text-slate-400 text-lg">corporate_fare</span>
+                                        <span class="text-sm text-slate-600">Cocody (45 Bureaux)</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-16 h-2 bg-slate-200 rounded-full animate-pulse"></div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <span class="material-symbols-outlined text-slate-400 text-lg">corporate_fare</span>
+                                        <span class="text-sm text-slate-600">Yopougon (62 Bureaux)</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-24 h-2 bg-slate-200 rounded-full animate-pulse"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 py-2 mt-2">
+                            <span class="material-symbols-outlined text-slate-400 text-lg">terrain</span>
+                            <span class="text-sm font-bold text-slate-700">Yamoussoukro (District)</span>
+                            <div class="w-12 h-2 bg-slate-100 rounded-full animate-pulse"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Component C: Synthèse des Voix (Closed) -->
+            <div class="border-b border-slate-50 group opacity-50">
+                <button class="w-full flex items-center justify-between p-6 cursor-not-allowed">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">
+                            <span class="material-symbols-outlined"
+                                  data-weight="fill">analytics</span>
+                        </div>
+                        <div class="text-left">
+                            <h3 class="font-bold text-slate-400">Synthèse des
+                                Voix</h3>
+                            <p class="text-xs text-slate-300">En attente de
+                                validation structurelle</p>
+                        </div>
+                    </div>
+                    <span class="material-symbols-outlined text-slate-300">lock</span>
+                </button>
+            </div>
+        </div>
+        <!-- Analysis Footer Info -->
+        <div class="p-8 bg-slate-900 text-white mt-auto">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-2 bg-white/10 rounded-lg">
+                    <span class="material-symbols-outlined text-white text-sm">terminal</span>
+                </div>
+                <span class="text-[10px] font-bold tracking-widest uppercase text-slate-400">Engine Logs v2.0</span>
+            </div>
+            <div class="space-y-1 font-mono text-[10px] text-slate-500">
+                <p><span class="text-secondary">[OK]</span> Fragment 0x442
+                    verified signature</p>
+                <p><span class="text-secondary">[OK]</span> Mapping Region:
+                    "LAGUNES" -&gt; ID_04</p>
+                <p><span class="text-tertiary">[PROCESS]</span> Normalizing
+                    candidate strings...</p>
+            </div>
+        </div>
+    </aside>
+</main>
+<!-- Contextual FAB Suppression: FAB is not appropriate for this task-focused full-screen view -->
+{% endblock %}
