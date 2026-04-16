@@ -25,6 +25,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS only_one_active_election
 ON elections (status)
 WHERE status = 'OPEN' OR status='DRAFT';
 
+
+
 CREATE TABLE IF NOT EXISTS geography (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     region VARCHAR(100),

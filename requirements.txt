@@ -20,5 +20,7 @@ sqlparse
 pyjwt
 flask-jwt-extended
 
+httpx
+
 git+https://github.com/boris-kanga/kb_tools.git#egg=kb_tools
 

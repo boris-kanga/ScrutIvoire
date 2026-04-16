@@ -36,7 +36,10 @@ def find_pdf_utils_columns(table_list):
         prev = ""
         for i, row in enumerate(line):
             if not row:
-                row = prev
+                row = ""
+                if i < len(line) - 1:
+                    row = prev
+
             print(row)
             prev = row
             columns_concat_text[i]+=" "+row

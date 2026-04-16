@@ -38,6 +38,15 @@ S3_CONFIG = {
 # JWT
 JWT_TOKEN_LOCATION = ["cookies"]
 
+LLM_PROVIDERS = {
+    "GEMINI"  : os.getenv("AISTUDIO_KEY"),
+    "CEREBRAS": os.getenv("CEREBRAS_KEY"),
+    "GROQ"    : os.getenv("GROQ_KEY"),
+    "OPENAI"  : os.getenv("OPENAI_KEY")
+}
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+
 
 if __name__ == '__main__':
     pass
