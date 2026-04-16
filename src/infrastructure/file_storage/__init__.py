@@ -9,6 +9,9 @@ class FileStorageProtocol(Protocol):
     async def create_bucket(self, bucket_name):
         pass
 
+    async def file_exists(self, bucket, filename):
+        pass
+
     async def upload(self, bucket, local_path, remote_name):
         pass
 

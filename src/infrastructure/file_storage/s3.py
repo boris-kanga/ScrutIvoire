@@ -11,6 +11,14 @@ class S3StorageAdapter:
             "region_name": region,
         }
 
+    async def file_exists(self, bucket_name, filename):
+        async with self.session.client("s3", **self.config) as s3:
+            try:
+                await s3.head_object(Bucket=bucket_name, Key=filename)
+                return True
+            except ClientError:
+                return False
+
     async def create_bucket(self, bucket_name):
         """Crée un bucket s'il n'existe pas déjà."""
         async with self.session.client("s3", **self.config) as s3:

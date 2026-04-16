@@ -3,19 +3,21 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable, Optional, AsyncGenerator
 
 
 @dataclass
 class Election:
-    name: str = ""
-    type: str = ""
-    status: str = "DRAFT"
+    name: str                             = ""
+    type: str                             = ""
+    status: str                           = "DRAFT"
 
-    id: uuid.UUID = field(init=False)
+    id: uuid.UUID                         = field(init=False)
 
     delete: Callable[[], Awaitable[None]] = field(init=False)
     update: Callable[[], Awaitable[None]] = field(init=False)
+
+    doc: "Document"                       = field(init=False)
 
     def to_dict(self) -> dict:
         d = {
@@ -47,6 +49,8 @@ class Document:
     integrity_status: bool = True
 
     id: uuid.UUID = field(init=False)
+
+    get: Callable[[], AsyncGenerator[str, None]] = field(init=False)
 
     def __post_init__(self):
         self.file_name = str(self.file_name)
