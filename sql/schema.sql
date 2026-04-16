@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS source_documents (
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- verification des integrite des fichiers aux etapes cles
     last_integrity_check TIMESTAMP,
-    integrity_status VARCHAR(20) DEFAULT 'PENDING' CHECK (integrity_status IN ('OK', 'FAILED', 'PENDING'))
+    integrity_status boolean DEFAULT TRUE
 );
 
 -- 4. STAGING (PIPELINE DE TRAITEMENT)

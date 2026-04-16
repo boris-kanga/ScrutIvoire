@@ -20,7 +20,3 @@ async def index():
 @admin.get("/Archives")
 async def archives():
     return render_template("archives.html", api_base=API_BASE)
-
-@admin.get("/Archives/Nouveau")
-async def new_archive():
-    return render_template("new_archive.html", api_base=API_BASE)

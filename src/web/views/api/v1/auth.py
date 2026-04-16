@@ -31,7 +31,7 @@ async def login(db: PgDB):
         return jsonify({"ok": False}), 400
 
     token = create_access_token(
-        email,
+        str(user.id),
         expires_delta=timedelta(hours=1),
         additional_claims=user.to_dict()
     )

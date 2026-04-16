@@ -1,10 +1,17 @@
 import os
 
+from asgiref.wsgi import WsgiToAsgi
+
+from socketio import ASGIApp, AsyncRedisManager, AsyncServer
+
 from flask import Flask
 from flask_jwt_extended import JWTManager
 
-from src.core.config import WORK_DIR, APP_NAME
+from src.core.config import WORK_DIR
 from src.core import config
+
+
+from src.web.views.api.v1.socket_api import init_socket
 
 
 def create_app():
@@ -26,4 +33,22 @@ def create_app():
 
     JWTManager(app)
 
-    return app
+    messager_redis = AsyncRedisManager(
+        'redis://{host}:{port}'.format(**config.REDIS_CONFIG)
+    )
+
+    socketio = AsyncServer(
+        async_mode='asgi',
+        client_manager=messager_redis,
+        cors_allowed_origins="*"
+    )
+
+    init_socket(socketio)
+
+    flask_app_asgi = WsgiToAsgi(app)
+
+    # On wrap l'application Flask pour Hypercorn
+    asgi_app = ASGIApp(socketio, flask_app_asgi)
+
+
+    return asgi_app

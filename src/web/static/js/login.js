@@ -1,7 +1,6 @@
 const config_app = window.config_app;
 
 
-
 $("#login").submit((e)=>{
     console.log(e);
     e.preventDefault();
@@ -27,6 +26,13 @@ $("#login").submit((e)=>{
         }
         return resp.json();
     }).then(d=>{
+        localStorage.setItem("access_token", d.token);
+        localStorage.setItem("role", d.role);
+        if (window.socket){
+            window.socket.auth.token = d.token
+            //socket.disconnect().connect()
+        }
+        location.href = "/Administration"
 
     })
 })

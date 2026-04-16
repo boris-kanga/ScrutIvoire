@@ -18,8 +18,13 @@ $(document).ready(()=>{
             $("#empty-state").show();
             $("#election-state").hide();
         }else{
-            $("#empty-state").hide();
-            $("#election-state").show();
+            if (d.current.status === "OPEN"){
+                $("#empty-state").hide();
+                $("#election-state").show();
+            }else{
+                location.href = "/Administration/Archives?new="+d.current.id;
+            }
+
         }
 
     })

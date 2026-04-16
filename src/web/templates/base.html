@@ -105,10 +105,47 @@
 
 {% block content %}{% endblock %}
 <script src="https://code.jquery.com/jquery-4.0.0.js" integrity="sha256-9fsHeVnKBvqh3FB2HYu7g2xseAZ5MlN6Kz/qnkASV8U=" crossorigin="anonymous"></script>
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
 <script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
     window.config_app = {
         api_base: "{{ api_base }}"
     };
+</script>
+
+<script>
+    // 1. Définir l'URL de ton serveur Hypercorn
+    const SERVER_URL = "http://127.0.0.1:5005";
+
+    // 2. Établir la connexion avec des paramètres personnalisés
+    const socket = io(SERVER_URL, {
+        auth: {
+            token: localStorage.getItem('access_token')
+        },
+        transports: ['websocket'], // Force le mode WebSocket (mieux avec Hypercorn)
+        reconnection: true,
+        reconnectionAttempts: 5,
+        withCredentials: true
+    });
+
+    socket.on("connect", (a, b, c)=>{
+        console.log(a, b, c);
+    })
 </script>
 {% block script %}{% endblock %}
 

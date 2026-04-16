@@ -2,10 +2,10 @@ import aioboto3
 from botocore.exceptions import ClientError
 
 class S3StorageAdapter:
-    def __init__(self, endpoint_url, access_key, secret_key, region="us-east-1"):
+    def __init__(self, endpoint, access_key, secret_key, region="us-east-1", **_):
         self.session = aioboto3.Session()
         self.config = {
-            "endpoint_url": endpoint_url,
+            "endpoint_url": endpoint,
             "aws_access_key_id": access_key,
             "aws_secret_access_key": secret_key,
             "region_name": region,
@@ -20,10 +20,30 @@ class S3StorageAdapter:
                 await s3.create_bucket(Bucket=bucket_name)
                 print(f"Bucket '{bucket_name}' créé.")
 
-    async def upload(self, bucket, local_path, remote_name):
-        """Upload un fichier local vers le bucket."""
+    async def upload(self, bucket, file_source, remote_name):
+        """
+        Upload un fichier vers S3.
+        file_source peut être :
+        1. Un chemin local (str) -> on utilise upload_file
+        2. Un objet file-like (ex: request.files['file']) -> on utilise put_object
+        """
         async with self.session.client("s3", **self.config) as s3:
-            await s3.upload_file(local_path, bucket, remote_name)
+            try:
+                # verifier si le bucket exists
+                await s3.head_bucket(Bucket=bucket)
+            except ClientError:
+                # creer sinon
+                await s3.create_bucket(Bucket=bucket)
+                print(f"Bucket '{bucket}' créé.")
+            if isinstance(file_source, str):
+                # Cas d'un fichier local sur le disque
+                await s3.upload_file(file_source, bucket, remote_name)
+            else:
+                # Cas d'un objet FileStorage (Flask) ou BytesIO
+                # On lit le contenu du stream
+                await s3.put_object(Bucket=bucket, Key=remote_name,
+                                    Body=file_source)
+
             return f"Uploaded {remote_name}"
 
     async def download(self, bucket, remote_name, local_path):
