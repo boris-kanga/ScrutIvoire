@@ -86,16 +86,66 @@
         .primary-gradient-hover:hover {
             filter: brightness(0.9);
         }
+        .glass-panel {
+            background: rgba(247, 250, 252, 0.8);
+            backdrop-filter: blur(20px);
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, #e5e9eb 25%, #f1f4f6 50%, #e5e9eb 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite linear;
+        }
     </style>
 </head>
 <body class="{% block body_class %}bg-background font-body text-on-surface min-h-screen flex flex-col items-center overflow-x-hidden antialiased{% endblock %}">
 
 {% block content %}{% endblock %}
 <script src="https://code.jquery.com/jquery-4.0.0.js" integrity="sha256-9fsHeVnKBvqh3FB2HYu7g2xseAZ5MlN6Kz/qnkASV8U=" crossorigin="anonymous"></script>
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
 <script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
     window.config_app = {
         api_base: "{{ api_base }}"
     };
+</script>
+
+<script>
+    // 1. Définir l'URL de ton serveur Hypercorn
+    const SERVER_URL = "http://127.0.0.1:5005";
+
+    // 2. Établir la connexion avec des paramètres personnalisés
+    const socket = io(SERVER_URL, {
+        auth: {
+            token: localStorage.getItem('access_token')
+        },
+        transports: ['websocket'], // Force le mode WebSocket (mieux avec Hypercorn)
+        reconnection: true,
+        reconnectionAttempts: 5,
+        withCredentials: true
+    });
+
+    socket.on("connect", (a, b, c)=>{
+        console.log(a, b, c);
+    })
 </script>
 {% block script %}{% endblock %}
 

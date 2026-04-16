@@ -1,0 +1,62 @@
+Role: Expert Data Engineer spécialisé en extraction électorale (Côte d'Ivoire).
+
+Task: Analyser une liste de colonnes extraites d'un PDF par `pdfplumber` et retourner un mapping d'index (0-based) vers un schéma canonique anglais.
+
+### RÈGLES DE DÉCISION CRUCIALES :
+1. DÉTECTION DU FORMAT CANDIDAT :
+   - SI tu vois des noms propres de candidats (ex: "Gbagbo", "Ouattara", "Thiam") en titres de colonnes :
+     -> set "format": "column". Remplis "column_mode" avec les index. Mets "row_mode" à null.
+   - SI les titres sont génériques (ex: "Candidat", "Parti", "Groupement", "Liste") :
+     -> set "format": "row". Remplis "row_mode" avec les index. Mets "column_mode" à [].
+
+2. NETTOYAGE OCR :
+   - Ignore le bruit (ex: "REGI ON" = region, "VVOOTTAANNTTSS" = voters).
+   - Réduis les répétitions de lettres (ex: "CCOOOORRDDIINNAATTIIOONN" = coordination).
+
+3. MAPPING :
+   - Si une colonne n'existe pas, retourne l'index -1.
+   - Les index doivent être basés sur la liste fournie (0-based).
+
+### SCHÉMA DE SORTIE (JSON UNIQUEMENT) :
+{
+  "election_metadata": {
+    {% if title %}"type": "legislative | presidential | municipal",{% endif %}
+    "format": "row | column",
+    "confidence_score": 0.0
+  },
+  "mapping_index": {
+    "region": -1,
+    "locality": -1,
+    "polling_stations_count": -1,
+    "on_call_staff": -1,
+    "registered_voters_male": -1,
+    "registered_voters_female": -1,
+    "registered_voters_total": -1,
+    "voters_male": -1,
+    "voters_female": -1,
+    "voters_total": -1,
+    "participation_rate": -1,
+    "null_ballots": -1,
+    "expressed_votes": -1,
+    "blank_ballots_count": -1,
+    "blank_ballots_pct": -1,
+    "unregistered_voters_count": -1
+  },
+  "candidate_results": {
+    "row_mode": {
+      "party_idx": -1,
+      "candidate_name_idx": -1,
+      "score_idx": -1,
+      "percent_idx": -1,
+      "status_idx": -1
+    },
+    "column_mode": [
+      {
+        "candidate_name": "NAME",
+        "score_idx": -1,
+        "percent_idx": -1,
+        "status_idx": -1
+      }
+    ]
+  }
+}

@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+{% from "macros_admin.html" import nav %}
+
+{% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
+
+
+{% block title %}Galerie d'Archives Électorales{% endblock %}
+{% block content %}
+
+<style>
+    body { font-family: 'Inter', sans-serif; }
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .editorial-shadow {
+        box-shadow: 0 24px 48px -12px rgba(24, 28, 30, 0.04);
+    }
+    .dragger-signal{
+        position: absolute;
+        display: none
+    }
+    .dragger-signal.svg-border{
+        display: block;
+    }
+    .dragger-signal.svg-border rect {
+      animation: move-dashed 1s linear infinite;
+    }
+
+    @keyframes move-dashed {
+      from {
+        /* On décale de la somme des valeurs du dasharray (10 + 10 = 20) */
+        stroke-dashoffset: 20;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+    .kb-hidden{
+        display: none!important
+    }
+</style>
+
+<style>
+    .loader {
+      position: absolute;
+      top: 0; left: 0; z-index: 1;
+
+    }
+
+    #upload-progress-bar{
+        background: lightcoral;
+        height: 5px;
+        border-radius: 5px;
+        width: 0;
+        position: absolute; top:0; left:0;
+
+    }
+</style>
+<input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
+{{ nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="archives") }}
+
+<header id="header-new" class="kb-hidden fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white dark:bg-slate-950/80 backdrop-blur-xl shadow-sm">
+    <div class="flex items-center gap-4">
+        <button onclick="reset_new_archive()" class="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span>Annuler</span>
+        </button>
+    </div>
+    <div class="flex items-center gap-3">
+        <h1 class="text-slate-900 font-bold tracking-tight text-lg">Ingestion
+            d'Archive Officielle : PV_ZONE_CENTRE.pdf</h1>
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-tertiary-container/20 rounded-full text-tertiary text-xs font-bold uppercase tracking-wider animate-pulse-soft">
+            <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span>
+            </span>
+            ANALYSE EN COURS
+        </div>
+    </div>
+    <div class="flex items-center gap-4">
+        <button class="px-5 py-2 bg-slate-100 text-slate-400 font-bold rounded-lg cursor-not-allowed text-sm">
+            Confirmer l'Archivage
+        </button>
+        <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden ring-2 ring-white shadow-sm">
+            <img alt="Analyst Profile" class="w-full h-full object-cover"
+                 data-alt="Professional headshot of a government analyst in a suit against a neutral background"
+                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuALidPJHWARt9kbThig_por0TAWeyY5yRFpIg4qWnVxWjZN5-ZeY1Wnulb7bbv6jB5rQboyarhVGbuLrGR0Vv8XNQJY3znapm-jzhM7q4Q3ZpuWuTI8VP1zjIARFQ9YPlXzFyIN9ZGY9V1cPCm4SyZb6vagoQRljwGfRuGsxULLs73_JqTE22LT7ew7YHfsf0qbHdGMyBiS3C4lAaAI7b77P2uAe7gzM3A5aRjkk6IQ70CuoZtO33YA1tdiUYgmOneGQx62GYGQcAwq"/>
+        </div>
+    </div>
+</header>
+
+<header id="header-normal" class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
+    <div class="flex items-center gap-4 flex-1">
+        <label class="lg:hidden text-slate-600 cursor-pointer p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+               for="mobile-menu-toggle">
+            <span class="material-symbols-outlined">menu</span>
+        </label>
+        <div class="relative w-full max-w-xs hidden sm:block">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"
+              data-icon="search">search</span>
+            <input class="w-full bg-surface-container-low border-none rounded-lg pl-10 py-2 text-sm focus:ring-2 focus:ring-primary/30"
+                   placeholder="Rechercher une Archive..." type="text"/>
+        </div>
+    </div>
+    <div class="flex items-center gap-3 lg:gap-6">
+        <div class="flex items-center gap-2 lg:gap-4">
+            <button class="material-symbols-outlined text-slate-500 p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+                    data-icon="notifications">notifications
+            </button>
+            <div class="w-9 h-9 rounded-lg overflow-hidden border border-outline-variant/30">
+                <img alt="Administrator Profile"
+                     class="w-full h-full object-cover"
+                     src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBopSoipEE-bYKA6v4yirBrRxfVa_U-RTFbqr-iYZe6ftM39SDSTNxsu65Z-rROiNot6DlAGK3BNdK_gC4igrkbh3YwVZSngnVXrKiZok9GxrT-XyTJns-F1mOGblet7-HcVfwewdNGiExVnkJrY4-j3PYu9w-gsghf2muC-M0ggNbfvNakHJcQJqgavTdL79o5AwvFqZHjZonKdIagqCgsJSKNm7fuxmiVXVDE2l-VchI3uBXUqAXGlJ-a1MZcXtB5C8MviVVx7sl"/>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- SideNavBar -->
+<!-- Main Content Area -->
+<main style="position:relative" id="main" class="lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden">
+    <!-- TopAppBar -->
+    <svg class="dragger-signal">
+        <rect rx="10" ry="10" stroke-width="4"  stroke-dasharray="10, 10" fill="none" stroke="#954a00" />
+    </svg>
+    <!-- Content Canvas -->
+    <div class="flex-1 flex flex-col" style="margin-top: 3rem">
+        <!-- Breadcrumbs & Heading -->
+
+        <!-- Empty State Container -->
+        <div class="flex-1 flex items-center justify-center -mt-12">
+            <div class="max-w-2xl w-full text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <!-- Stylized Archive Icon -->
+                <div class="relative mx-auto w-64 h-64">
+                    <!-- Background atmospheric glow -->
+                    <div class="absolute inset-0 bg-primary/5 blur-[80px] rounded-full"></div>
+                    <!-- Layered Archive Visual -->
+                    <div class="relative bg-surface-container-lowest editorial-shadow rounded-[2rem] w-48 h-56 mx-auto flex flex-col items-center justify-center transform -rotate-3 transition-transform hover:rotate-0 duration-500">
+                        <div class="w-24 h-24 rounded-3xl bg-surface-container-low flex items-center justify-center text-primary-container mb-4">
+                            <span class="material-symbols-outlined text-6xl"
+                                  style="font-variation-settings: 'FILL' 0, 'wght' 200;">folder_open</span>
+                        </div>
+                        <div class="space-y-2 w-32">
+                            <div class="h-1.5 w-full bg-surface-container-high rounded-full"></div>
+                            <div class="h-1.5 w-2/3 bg-surface-container-high rounded-full"></div>
+                        </div>
+                        <!-- Floating Badge -->
+                        <div class="absolute -top-4 -right-4 w-16 h-16 rounded-2xl bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-xl shadow-secondary/10 rotate-12">
+                            <span class="material-symbols-outlined text-3xl">history_edu</span>
+                        </div>
+                    </div>
+                    <!-- Secondary floating card -->
+                    <div class="absolute bottom-4 left-4 w-32 h-40 bg-surface-container-lowest editorial-shadow rounded-2xl transform rotate-6 z-[-1] opacity-60"></div>
+                </div>
+                <!-- Textual Content -->
+                <div class="space-y-4 px-6">
+                    <h3 class="text-3xl font-bold text-on-surface tracking-tight">
+                        Aucune archive disponible</h3>
+                    <p class="text-lg text-slate-500 leading-relaxed max-w-md mx-auto">
+                        Commencez par ajouter une archive historique pour
+                        enrichir la base de données électorale et préserver
+                        l'intégrité de l'information.
+                    </p>
+                </div>
+                <!-- CTA Actions -->
+                <form  action="#" enctype="multipart/form-data">
+                    <input onchange="pdf_preview(this.files[0])" style="display: none" type="file" id="file" name="file">
+                </form>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+                    <a onclick="$('#file').click()" href="#" class="group px-8 py-4 bg-primary text-on-primary rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
+                        <span class="material-symbols-outlined group-hover:rotate-90 transition-transform">add</span>
+                        Importer un document
+                    </a>
+                </div>
+                <!-- Informational Footer -->
+                <div class="pt-12 grid grid-cols-1 md:grid-cols-3 gap-6 opacity-60">
+                    <div class="flex flex-col items-center text-center gap-2">
+                        <span class="material-symbols-outlined text-primary">verified_user</span>
+                        <span class="text-xs font-bold uppercase tracking-widest">Sécurisé</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center gap-2">
+                        <span class="material-symbols-outlined text-primary">cloud_upload</span>
+                        <span class="text-xs font-bold uppercase tracking-widest">Synchronisé</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center gap-2">
+                        <span class="material-symbols-outlined text-primary">public</span>
+                        <span class="text-xs font-bold uppercase tracking-widest">Public</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Background Decor (Editorial feel) -->
+    <div class="fixed bottom-0 right-0 p-12 pointer-events-none z-[-1]">
+        <span class="text-[20rem] font-black text-slate-100/50 leading-none select-none">2024</span>
+    </div>
+</main>
+
+<main id="preview" class="kb-hidden flex h-screen overflow-hidden">
+    <section style="padding: 2rem 2rem 0 2rem; position: relative" class="w-3/5 bg-slate-900 flex flex-col relative overflow-hidden">
+
+        <div class="w-full h-full loader flex flex items-center justify-center">
+            <img width="30" src="{{ url_for('static', filename='images/loader-multi.gif') }}" alt="loader gif">
+        </div>
+        <div id="upload-progress-bar"></div>
+        <div id="pdf-canvas" style="max-height: 100%; max-width:100%">
+        </div>
+    </section>
+    <aside class="w-2/5 bg-white flex flex-col border-l border-slate-100 shadow-inner overflow-y-auto">
+        <div id="election-name">
+            <div class="h-8 w-40 skeleton rounded-lg opacity-20"></div>
+        </div>
+
+        <div class="flex-1">
+            <div class="border-b border-slate-50 group kb-hidden">
+                <button class="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary">
+                            <span class="material-symbols-outlined"
+                                  data-weight="fill">ballot</span>
+                        </div>
+                        <div class="text-left">
+                            <h3 class="font-bold text-slate-800">Scrutin &amp;
+                                Candidats</h3>
+                            <p class="text-xs text-slate-400">3 candidats
+                                identifiés</p>
+                        </div>
+                    </div>
+                    <span class="material-symbols-outlined text-slate-400 group-hover:rotate-180 transition-transform">expand_more</span>
+                </button>
+                <div class="px-6 pb-8 grid grid-cols-2 gap-4">
+                    <!-- Candidate 1 -->
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3 mb-3">
+                            <img alt="Alassane"
+                                 class="w-8 h-8 rounded-full object-cover"
+                                 data-alt="Close-up portrait of an African man with grey hair in professional lighting"
+                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYffbIknJ1VY4sCouI5ZbzUGfQAViBaqnSNhKSy-svbEQzoTe9ItfYhlRAa0O4fQplcjXzjNp6KIMGvgXVjmvQevYXYAprKFIZYzauxe_e7M4KKMBOkBlJrD6GeD_8tlV6xlN2MNnn8-oWfWSFmjwY5PYv6SwM5qVmdwEZxkJSd1QpN-dCNYZ8dtvUsiptDkg3VE7Jo5bStsE0lcLHXVAE9uHcAffqYelfqdTwO3OhMy3ikxVv5OUOYbGpfxL1CUixu26f_UMX5y5m"/>
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">
+                                    Candidat A</p>
+                                <p class="text-xs font-bold text-slate-800">A.
+                                    Ouattara</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] px-2 py-0.5 bg-secondary/10 text-secondary rounded-full font-bold">Match 100%</span>
+                            <span class="text-xs font-bold text-slate-600">RHDP</span>
+                        </div>
+                    </div>
+                    <!-- Candidate 2 -->
+                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3 mb-3">
+                            <img alt="Bedie"
+                                 class="w-8 h-8 rounded-full object-cover"
+                                 data-alt="Portrait of an older distinguished African man with glasses in soft studio light"
+                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEnQDLT-3iG7CYWZAzpPSlFrPDU0O1UYRzqQW4KFSgb3ZLyFzYAxjhzn47t1Zg9lI_KDIHkZlirhkP29835wdu2vdSPgK94a9kKrK9455cd-lZEhaTOBDCgg2o3gBhdMRZlBYHzYUCN7m7hv8ZCjSGw8IlhI_FkicyH5pPfyaXy2QxJWZs8CEksEVYka8R1iRCW5qlCd8AqV6VOgLsPHqNFFW4xqc5iv-Wc3AGKppep3P1FSZ_lKuhycRB5kJ_fymqqS6WrKmrU5QG"/>
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">
+                                    Candidat B</p>
+                                <p class="text-xs font-bold text-slate-800">H.
+                                    K. Bédié</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold">Match 85%</span>
+                            <span class="text-xs font-bold text-slate-600">PDCI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-b border-slate-50 group">
+                <div class="h-15 w-40 skeleton rounded-lg opacity-20"></div>
+            </div>
+        </div>
+
+    </aside>
+</main>
+{% endblock %}
+
+{% block script%}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script src="{{ url_for('static', filename='js/pdfReader.js') }}"></script>
+
+<script>
+
+    const PDFReader = PDFViewer(
+        'pdf-canvas'
+        ,{
+            onZoomChange: z => {$("#preview .loader").hide()}
+        }
+    );
+
+    function get_new_election_id(){
+        const params = new URLSearchParams(window.location.search);
+        return params.get("new") || null
+    }
+
+    async function getFileHash(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+
+    function uploadArchive(file) {
+        getFileHash(file).then(hash=>{
+            const formData = new FormData();
+            formData.append('archive', file);
+            formData.append('hash', hash);
+            formData.append('socket_id', socket.id);
+
+            const xhr = new XMLHttpRequest();
+            xhr.withCredentials = true;
+
+            xhr.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    updateProgressBar(percentComplete);
+                }
+            });
+
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    if (xhr.status === 200) {
+                        const params = new URLSearchParams(window.location.search);
+                        params.set('new', JSON.parse(xhr.responseText).election_id);
+
+                        history.replaceState(null, "", "?" + params.toString());
+                        console.log("Upload réussi :", JSON.parse(xhr.responseText));
+
+                    } else {
+                        console.error("Erreur d'upload");
+
+                    }
+                }
+            };
+
+            xhr.open('POST', window.config_app.api_base+"/election/new/archive-form-file" , true);
+
+            const token = localStorage.getItem('a_token');
+
+            xhr.setRequestHeader('X-CSRF-TOKEN', getCookie('csrf_access_token'))
+            if (token) {
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+            }
+
+            xhr.send(formData);
+
+        })
+
+    }
+
+    // Helpers pour l'UI
+    function updateProgressBar(value) {
+        const progressBar = document.getElementById('upload-progress-bar');
+        progressBar.style.width = value + '%';
+        progressBar.innerText = Math.round(value) + '%';
+    }
+
+
+    function pdf_preview(file){
+        $("#preview .loader").show()
+        $("#admin-nav").addClass("kb-hidden")
+        $("#main, #header-nnormal").addClass("kb-hidden");
+        $("label[for=mobile-menu-toggle]").addClass("kb-hidden");
+        $("#preview").removeClass("kb-hidden");
+        $("#header-new").removeClass("kb-hidden");
+        if (typeof file === "string"){
+            // archive id got
+            fetch(config_app.api_base+"/election/"+file+"/draft/report-file")
+                .then(resp=>{
+                    return resp.json();
+                })
+                .then(d=>{
+                    PDFReader.load(d.url);
+                })
+            return;
+        }
+        if (file && file.type === "application/pdf") {
+            PDFReader.loadBlob(file);
+            uploadArchive(file);
+        }
+    }
+    function reset_new_archive(){
+        $("#admin-nav").removeClass("kb-hidden");
+        $("#main, #header-nnormal").removeClass("kb-hidden");
+        $("label[for=mobile-menu-toggle]").removeClass("kb-hidden");
+
+        $("#header-new").addClass("kb-hidden");
+        $("#preview").addClass("kb-hidden");
+        fetch(
+            config_app.api_base+"/election/"+file+"/draft",
+            {
+                method: "DELETE"
+            }
+        )
+                .then(resp=>{
+                    return resp.json();
+                })
+                .then(d=>{
+                    PDFReader.load(d.url);
+                })
+
+    }
+
+    $("#main").on("dragover", (e)=>{
+        e.preventDefault();
+        const bound = document.querySelector("#main").getBoundingClientRect()
+        const w = bound.width;
+        const h = bound.height;
+        $(".dragger-signal rect").attr({
+            "x": 2.5 * w/100,
+            "y": 2.5*h/100,
+            "width": 9*w/10,
+            "height": 9*h/10
+            })
+        ;
+        $(".dragger-signal").addClass("svg-border").attr({
+            "width": w,
+            "height": h,
+            "viewBox": "0 0 " + w + " " + h
+        })
+    }).on("dragleave", (e)=>{
+        $(".dragger-signal").removeClass("svg-border")
+    }).on("drop", (e)=>{
+        e.preventDefault();
+        $(".dragger-signal").removeClass("svg-border")
+        // Les fichiers sont dans dataTransfer.files
+        const file = e.originalEvent.dataTransfer.files[0];
+        pdf_preview(file)
+
+        //for (const file of files) {
+        //    console.log(`${file.name} (${file.size} octets)`);
+            // C'est ici que vous pouvez envoyer le fichier via FormData ou reader.readAsDataURL()
+        //}
+    })
+
+
+
+    $(document).ready(()=>{
+        if (get_new_election_id()){
+            pdf_preview(get_new_election_id());
+        }
+    })
+
+</script>
+{% endblock %}
+
+

@@ -1,3 +1,4 @@
+import traceback
 from datetime import timedelta
 
 from flask import Blueprint, jsonify, request
@@ -23,12 +24,14 @@ async def login(db: PgDB):
         user = await UserRepo(db).get_user_by_email(email, raise_=True)
         user.verify_password(password, raise_=True)
     except UserError:
+        traceback.print_exc()
         return jsonify({"ok": False, "msg": "Bad Password or Email"}), 401
     except Exception:
+        traceback.print_exc()
         return jsonify({"ok": False}), 400
 
     token = create_access_token(
-        email,
+        str(user.id),
         expires_delta=timedelta(hours=1),
         additional_claims=user.to_dict()
     )

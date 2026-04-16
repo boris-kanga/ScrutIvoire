@@ -1,12 +1,22 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, request, redirect, url_for
 
 from src.web.views.api import API_BASE
 
-admin = Blueprint("admin", __name__, url_prefix="/admin")
+admin = Blueprint("admin", __name__, url_prefix="/Administration")
+
+
+@admin.get("/Connexion")
+async def login():
+    return render_template("login.html", api_base=API_BASE)
 
 
 @admin.get("/")
 async def index():
-    return render_template("login.html", api_base=API_BASE)
+    if "access_token_cookie" not in request.cookies:
+        return redirect(url_for("admin.login"))
+    return render_template("admin.html", api_base=API_BASE)
 
 
+@admin.get("/Archives")
+async def archives():
+    return render_template("archives.html", api_base=API_BASE)
