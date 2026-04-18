@@ -3,7 +3,10 @@ import sys
 import contextlib
 import importlib.util
 import re
+import time
 from datetime import datetime, date
+from functools import wraps
+
 from kb_tools.tools import remove_accent_from_text, format_var_name
 
 
@@ -21,13 +24,13 @@ def extract_date_from_text(text):
 
     m = "|".join(f_month)
 
-    res = re.search(r"(\d+)\s+("+m+")\s+(\d{4})", text, flags=re.IGNORECASE)
+    res = re.search(r"(\d+)\s+("+m+r")\s+(\d{4})", text, flags=re.IGNORECASE)
     if res is not None:
         d, m, y = res.groups()
         return date(int(y), f_month.index(m.lower()) + 1, int(d))
 
     m = "|".join(abr_month)
-    res = re.search(r"(\d+)\s+("+m+")\s+(\d{4})", text, flags=re.IGNORECASE)
+    res = re.search(r"(\d+)\s+("+m+r")\s+(\d{4})", text, flags=re.IGNORECASE)
     if res is not None:
         d, m, y = res.groups()
         return date(int(y), f_month.index(m.lower()) + 1, int(d))
@@ -53,3 +56,32 @@ def load_module(module, package=None):
     if name in sys.modules:
         sys.modules.pop(name)
     del m
+
+
+
+__cache = {}
+def cache(timeout_minutes=5):
+    def wrapper(func):
+        @wraps(func)
+        def inner(*args, **kwargs):
+            c_t = time.time()
+            got = True
+
+            if func.__name__ in __cache:
+                v, t = __cache[func.__name__]
+                if c_t - t > timeout_minutes*60:
+                    got = False
+            else:
+                got = False
+            if not got:
+                try:
+                    v = func(*args, **kwargs)
+                    __cache[func.__name__] = v, c_t
+                except Exception:
+                    if func.__name__ in __cache:
+                        return __cache[func.__name__][0]
+                    else:
+                        raise
+            return __cache[func.__name__][0]
+        return inner
+    return wrapper

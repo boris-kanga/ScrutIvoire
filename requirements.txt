@@ -21,6 +21,7 @@ pyjwt
 flask-jwt-extended
 
 httpx
+thefuzz
 
 git+https://github.com/boris-kanga/kb_tools.git#egg=kb_tools
 
