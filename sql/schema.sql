@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
     winner str,
 
-    bbox_json TEXT, -- [x0, x1, width, height, page]
+    bbox_json TEXT, -- [x0, top, x1, bottom, page]
 
     processed_by UUID REFERENCES users(id) NOT NULL, -- Agent qui a fait le scan/saisie
     validated_by UUID REFERENCES users(id), -- Validateur qui a approuvé
@@ -113,7 +113,6 @@ CREATE TABLE IF NOT EXISTS candidate_results_staging (
 
     bbox_json TEXT,
 
-    processed_by UUID REFERENCES users(id) NOT NULL, -- Agent qui a fait le scan/saisie
     validated_by UUID REFERENCES users(id), -- Validateur qui a approuvé
     validation_status VARCHAR(20) DEFAULT 'PENDING',
 

@@ -1,9 +1,13 @@
 import enum
+import json
+import re
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
 from typing import Callable, Awaitable, Optional, AsyncGenerator, List
+
+from src.utils.tools import value_parser
 
 
 @dataclass
@@ -76,28 +80,63 @@ class Document:
 
 
 
+
+def int_parser(value):
+    if isinstance(value, int):
+        return value
+    return int(float(re.sub(r"\s", "", value)))
+
+
+def percent_parser(value):
+    value = str(value).replace(",", ".").replace("%", "")
+    value = float(re.sub(r"\s", "", value))
+    return value / 100
+
+
+
 @dataclass
-class Candidate:
+class CandidateStagingResult:
     locality_id: int
 
     full_name: str
-    party_ticker: str
     raw_value: int
 
     bbox_json: dict
 
-    processed_by: uuid.UUID
+    party_ticker: str = None
 
     validated_by: Optional[uuid.UUID] = None
 
     validation_status: str = "PENDING"
 
     validated_at: Optional[datetime] = None
+
     created_at: datetime = field(init=False)
+    id: int = field(init=False)
+
+    def __post_init__(self):
+        assert self.full_name
+        self.raw_value = value_parser(int_parser, self.raw_value, 0)
+
+    def to_dict(self, bbox_json_as_text=False):
+        d = {}
+        for k in self.__annotations__:
+            if k not in ("id", "created_at"):
+                v = getattr(self, k)
+                if v is not None:
+                    d[k] = v
+        if getattr(self, "id", None) is not None:
+            d["id"] = self.id
+
+        if getattr(self, "created_at", None) is not None:
+            d["created_at"] = self.created_at
+        if bbox_json_as_text:
+            d["bbox_json"] = json.dumps(self.bbox_json)
+        return d
 
 
 @dataclass
-class Locality:
+class LocalityStagingResult:
     region: str
     locality: str
     election_id: uuid.UUID
@@ -110,10 +149,9 @@ class Locality:
 
     bbox_json: dict
 
-    processed_by: uuid.UUID
+    processed_by: Optional[uuid.UUID]
 
-    candidates: List[Candidate]
-
+    # candidates: List[CandidateStagingResult] = field(init=False)
 
     polling_stations_count: Optional[int] = None
     on_call_staff: Optional[int] = None
@@ -148,6 +186,58 @@ class Locality:
     created_at: datetime = field(init=False)
 
     id: int = field(init=False)
+
+    def __post_init__(self):
+        assert self.locality and self.region
+
+        self.registered_voters_total = value_parser(int_parser, self.registered_voters_total)
+        self.voters_total = value_parser(int_parser, self.voters_total)
+        self.expressed_votes = value_parser(int_parser, self.expressed_votes)
+        # processed_by
+        self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
+        self.on_call_staff = value_parser(int_parser, self.on_call_staff, None)
+
+        self.pop_size_male = value_parser(int_parser, self.pop_size_male, None)
+        self.pop_size_female = value_parser(int_parser, self.pop_size_female, None)
+        self.pop_size = value_parser(int_parser, self.pop_size, None)
+
+        self.registered_voters_male = value_parser(int_parser, self.registered_voters_male, None)
+        self.registered_voters_female = value_parser(int_parser, self.registered_voters_female, None)
+
+        self.voters_male = value_parser(int_parser, self.voters_male, None)
+        self.voters_female = value_parser(int_parser, self.voters_female, None)
+
+        self.participation_rate = value_parser(percent_parser, self.participation_rate, None)
+
+        self.null_ballots = value_parser(int_parser, self.null_ballots, None)
+
+        self.blank_ballots_pct = value_parser(percent_parser, self.blank_ballots_pct, None)
+        self.blank_ballots_count = value_parser(int_parser, self.blank_ballots_count, None)
+
+        self.unregistered_voters_count = value_parser(int_parser, self.unregistered_voters_count, None)
+
+        if isinstance(self.winner, dict):
+            self.winner = self.winner["full_name"]
+
+        self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
+
+
+
+    def to_dict(self, bbox_json_as_text=False):
+        d = {}
+        for k in self.__annotations__:
+            if k not in ("id", "created_at"):
+                v = getattr(self, k)
+                if v is not None:
+                    d[k] = v
+        if getattr(self, "id", None) is not None:
+            d["id"] = self.id
+
+        if getattr(self, "created_at", None) is not None:
+            d["created_at"] = self.created_at
+        if bbox_json_as_text:
+            d["bbox_json"] = json.dumps(self.bbox_json)
+        return d
 
 
 

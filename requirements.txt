@@ -2,6 +2,8 @@
 pytest
 pytest-asyncio
 
+aiofiles
+
 click
 
 werkzeug

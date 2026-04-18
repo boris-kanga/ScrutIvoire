@@ -1,7 +1,8 @@
 import uuid
 from typing import List
 
-from src.domain.election import Election, Document, DocumentType
+from src.domain.election import Election, Document, DocumentType, \
+    LocalityStagingResult, CandidateStagingResult
 from src.infrastructure.database.pgdb import PgDB
 
 from functools import partial
@@ -113,3 +114,22 @@ class ElectionRepo:
         election.update = partial(self.update_election, election)
 
         return election
+
+    async def insert_archived_staging_data(
+            self, *, locality: List[LocalityStagingResult]=None,
+            candidate: List[CandidateStagingResult]=None
+    ):
+        res = None
+        if locality:
+            res = await self.db.insert_many(
+                [s.to_dict(bbox_json_as_text=True) for s in locality],
+                "locality_results_staging",
+                id_field="id"
+            )
+        else:
+            await self.db.insert_many(
+                [s.to_dict(bbox_json_as_text=True) for s in candidate],
+                "candidate_results_staging",
+                id_field="id"
+            )
+        return res

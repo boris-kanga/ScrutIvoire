@@ -85,3 +85,14 @@ def cache(timeout_minutes=5):
             return __cache[func.__name__][0]
         return inner
     return wrapper
+
+
+def value_parser(parser_func, value, *args, **kwargs):
+    try:
+        return parser_func(value)
+    except Exception:
+        if args:
+            return args[0]
+        if "default" in kwargs:
+            return kwargs["default"]
+        raise

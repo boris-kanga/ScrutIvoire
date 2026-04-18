@@ -5,7 +5,8 @@ from typing import Optional
 
 import aiofiles
 
-from src.domain.election import Election, Document, DocumentType
+from src.domain.election import Election, Document, DocumentType, \
+    LocalityStagingResult, CandidateStagingResult
 from src.infrastructure.database.redisdb import RedisDB
 from src.infrastructure.file_storage import FileStorageProtocol
 from src.infrastructure.message_broker.redis_message_broker import \
@@ -27,6 +28,39 @@ class ElectionService:
         self._mr = RedisMessageBroker(self.rd)
 
         self.storage = storage
+
+    async def add_extracted_archive_data(self, extracted_locality, election):
+        locality_staging = []
+        candidate_staging = []
+        for locality in extracted_locality:
+            # winner - value - cords - candidates
+            staging = LocalityStagingResult(
+                **locality["stage"],
+                locality=locality["value"],
+                election_id=election.id,
+                source_id=election.doc.id,
+                bbox_json=locality["cords"],
+                processed_by=None,
+                winner=locality["winner"],
+            )
+
+            locality_staging.append(staging)
+        ids = await self.repo.insert_archived_staging_data(
+            locality=locality_staging
+        )
+        for i, locality in enumerate(extracted_locality):
+            for c in locality["candidates"]:
+                c = CandidateStagingResult(
+                    locality_id=ids[i],
+                    full_name=c["full_name"],
+                    raw_value=c["raw_value"],
+                    bbox_json=c["bbox_json"],
+                    party_ticker=c["party_ticker"]
+                )
+                candidate_staging.append(c)
+        await self.repo.insert_archived_staging_data(
+            candidate=candidate_staging
+        )
 
     async def get_report_url(self, election_id):
         return await self.storage.get_presigned_url(

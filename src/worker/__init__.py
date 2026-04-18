@@ -1,10 +1,12 @@
 import asyncio
 import io
+import json
 import re
 from typing import List
 
 import pdfplumber
 
+from src.domain.election import LocalityStagingResult
 from src.infrastructure.database.pgdb import PgDB
 from src.infrastructure.database.redisdb import RedisDB
 from src.infrastructure.file_storage import FileStorageProtocol
@@ -216,6 +218,8 @@ class Worker:
         try:
             real_res = {}
             for k, idx in rsp.items():
+                if k not in LocalityStagingResult.__annotations__:
+                    continue
                 if idx in (-1, None):
                     continue
                 label = columns[idx]
@@ -728,9 +732,12 @@ class Worker:
                 )
             else:
                 # Traitement final des localités extraites
-                for locality in extracted_locality:
-
-                    pass
+                with open("tmp.json", "w", encoding="utf-8") as f:
+                    f.write(json.dumps(extracted_locality))
+                await self.election_service.add_extracted_archive_data(
+                    extracted_locality, election
+                )
+        return extracted_locality
 
     async def archive_processing(self):
         """
