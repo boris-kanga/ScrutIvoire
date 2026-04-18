@@ -23,7 +23,6 @@ async def test_treatment_of_an_archive():
     )
     a_ctx.__aenter__.return_value = file
 
-
     socket_mock = mock.MagicMock()
     def _print(*a, **kw):
         print("--> in socket.emit=","args:", a, "kw:", kw)
@@ -57,6 +56,9 @@ async def test_treatment_of_an_archive():
     msg_broker = mock.MagicMock()
     service_mock = mock.MagicMock()
     service_mock.get = mock.AsyncMock(return_value=mock_election)
+    service_mock.add_extracted_archive_data = mock.AsyncMock(
+        return_value=None
+    )
     worker = Worker(
         election_service=service_mock,
         msg_broker=msg_broker,
@@ -64,6 +66,6 @@ async def test_treatment_of_an_archive():
         llm_repo=llm_repo_mock,
     )
 
-    await worker._processing_archive_task("test", "test")
-
-    pass
+    extracted_locality = await worker._processing_archive_task("test", "test")
+    print(len(extracted_locality))
+    assert len(extracted_locality) == 205
