@@ -48,7 +48,10 @@ def find_pdf_utils_columns(table_list):
 
             prev = row = re.sub(r"(?<!\w\w)\s+", "", row)
             columns_concat_text[i]+=" "+row
-    return [c.strip() for c in columns_concat_text], index_row
+    res = [c.strip() for c in columns_concat_text]
+    if res[-1] == "":
+        res[-1] = "Résultat"
+    return res, index_row
 
 
 def map_columns_force(columns):
@@ -135,6 +138,12 @@ def is_region(r):
     if prob >= 95:
         return True, rr
     return False, None
+
+
+def is_candidate_winner(status):
+    if not status:
+        return False
+    return generate_candidate("%elu%", "%vain%") == status
 
 
 
