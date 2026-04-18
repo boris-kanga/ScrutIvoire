@@ -1,4 +1,5 @@
-{% if title %}Le titre du document: {{ title }} {% endif %}
+{% if title %}### THE DOCUMENT TITLE: {{ title }} {% endif %}
 
-Les colonnes:
-{{ columns }}
+### HEADERS TO MAP (0-INDEXED):
+{% for col in columns %}    {{ loop.index0 }}: {{ col|pprint }}
+{% endfor %}
