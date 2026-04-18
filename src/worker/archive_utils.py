@@ -48,7 +48,7 @@ def find_pdf_utils_columns(table_list):
 
             prev = row = re.sub(r"(?<!\w\w)\s+", "", row)
             columns_concat_text[i]+=" "+row
-    return columns_concat_text, index_row
+    return [c.strip() for c in columns_concat_text], index_row
 
 
 def map_columns_force(columns):

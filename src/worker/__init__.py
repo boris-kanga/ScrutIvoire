@@ -27,25 +27,90 @@ from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
     find_pdf_utils_columns, map_columns_force, get_regions, is_region
 
 
+def get_column_x_bounds(table, col_idx):
+    """
+    Retourne (x0, x1) de la colonne `col_idx` dans le tableau.
+    On prend la première cellule non nulle de cette colonne pour
+    récupérer ses bornes horizontales.
+    """
+    if isinstance(col_idx, list):
+        col_idx = col_idx[0]
+    for row in table.rows:
+        cells = row.cells
+        if col_idx < len(cells) and cells[col_idx] is not None:
+            cell = cells[col_idx]
+            # cell = (x0, top, x1, bottom)
+            return cell[0], cell[2]
+    return None, None
+
+
+def get_boundary_edges(page, x0_col, x1_col, *_, tol=5):
+    """
+    Retourne les Y des lignes horizontales qui traversent la colonne
+    définie par [x0_col, x1_col].
+
+    Une ligne horizontale est considérée comme frontière si :
+    - elle couvre au moins la plage [x0_col, x1_col]
+    - elle a une largeur suffisante (> 10pt) pour ne pas être un artefact
+
+    Calculé une seule fois par page pour éviter de ralentir la boucle.
+    """
+    boundaries = []
+    for e in page.edges:
+        # Garder uniquement les edges horizontaux suffisamment longs
+        if e.get('width', 0) < 10:
+            continue
+        # L'edge doit couvrir la colonne ciblée
+        if e['x0'] <= x0_col + tol and e['x1'] >= x1_col - tol:
+            boundaries.append(e['y0'])
+
+    # Dédupliquer les Y très proches (paires d'edges = les deux bords d'un trait)
+    boundaries.sort()
+    deduped = []
+    for y in boundaries:
+        if not deduped or y - deduped[-1] > 2:
+            deduped.append(y)
+
+    return deduped
+
+
+def get_row_content_at_idx(row, idx):
+    if isinstance(idx, int):
+        idx = [idx]
+    res = None
+    for i in sorted(idx):
+        if i >= 0:
+            if row[i] is not None:
+                res = ((res or "") + " " + str(row[i])).strip()
+    return res
+
+
+def has_crossed_boundary(row_bbox, boundaries, last_processed_y, tol=2):
+    row_bottom = row_bbox[3]
+    for boundary_y in boundaries:
+        if last_processed_y < boundary_y <= row_bottom + tol:
+            return True
+    return False
 
 
 class Worker:
     def __init__(
             self,
-            db: PgDB = None,
-            rd: RedisDB = None,
-            storage: FileStorageProtocol = None,
+            election_service=None,
             socket = None,
-            llm_repo = None
+            llm_repo = None,
+            msg_broker = None
     ):
-        if db is None:
+        if election_service is None:
             db = PgDB(dsn=POSTGRES_DB_URI)
-
-        if rd is None:
             rd = RedisDB(url='redis://{host}:{port}'.format(**REDIS_CONFIG))
-
-        if storage is None:
             storage = S3StorageAdapter(**S3_CONFIG)
+            election_service = ElectionService(ElectionRepo(db), rd, storage)
+
+        if msg_broker is None:
+            rd = RedisDB(url='redis://{host}:{port}'.format(**REDIS_CONFIG))
+            msg_broker = RedisMessageBroker(rd)
+
         if socket is None:
             socket = AsyncRedisManager(**REDIS_CONFIG)
 
@@ -53,19 +118,27 @@ class Worker:
             llm_repo = LLMRepo()
 
 
-        self.db = db
-        self.rd = rd
-        self.storage = storage
+        self.election_service = election_service
 
         self.socket = socket
 
         self.llm_repo = llm_repo
 
-        self.mr = RedisMessageBroker(self.rd)
+        self.mr = msg_broker
 
         self._tasks: List[asyncio.Task] = []
 
     async def _get_columns_from_archive(self, columns, name):
+        """
+        Appelle le LLM pour identifier le mapping des colonnes du tableau.
+        Retourne un dict avec :
+          - idx             : mapping nom_colonne → index
+          - candidate_results_format : 'row' ou 'column'
+          - candidate_results        : détail du format candidats
+          - confidence_score         : score de confiance du LLM
+          - election_type            : 'legislative' ou autre
+        En cas d'échec du LLM, tente un mapping forcé heuristique.
+        """
         messages = self.llm_repo.get_prompt(
             "column_detector",
             user_arg=dict(
@@ -76,35 +149,16 @@ class Worker:
                 title=name
             )
         )
-        response = {'success': True, 'result': {
-            'election_metadata': {'type': 'legislative', 'format': 'row',
-                                  'confidence_score': 0.8},
-            'mapping_index': {'region': 0, 'locality': 1,
-                              'polling_stations_count': 3,
-                              'registered_voters_total': 4, 'voters_total': 5,
-                              'null_ballots': 7, 'expressed_votes': 8,
-                              'blank_ballots_count': 9,
-                              'blank_ballots_pct': 10,
-                              'unregistered_voters_count': -1},
-            'candidate_results': {
-                'row_mode': {'party_idx': 11, 'candidate_name_idx': 12,
-                             'score_idx': 13, 'percent_idx': 14,
-                             'status_idx': -1}, 'column_mode': []}},
-                    'provider': 'groq',
-                    'model': 'meta-llama/llama-4-scout-17b-16e-instruct',
-                    'prompt_tokens': 893, 'completion_tokens': 871,
-                    'latency_ms': 5564}
-
-        # response = await self.llm_repo.run(
-        #     "column_detector",
-        #     messages, {}, timeout=60
-        # )
+        response = await self.llm_repo.run(
+            "column_detector",
+            messages, {}, timeout=60
+        )
         if not response["success"]:
             rsp, candidate_results_format, candidate_results = map_columns_force(columns)
             if not all(
-                (rsp[k] is not None and rsp[k] != -1) for k in (
+                (rsp.get(k) not in (None, -1)) for k in (
                 "region", "locality", "polling_stations_count",
-                "voters_total", "participation_rate",
+                "voters_total", "expressed_votes",
                 )
             ):
                 return None
@@ -124,15 +178,31 @@ class Worker:
 
             rsp = result["mapping_index"]
             if not all(
-                    (rsp[k] is not None and rsp[k] != -1) for k in (
+                    (rsp.get(k) not in (None, -1)) for k in (
                 "region", "locality", "polling_stations_count",
-                "voters_total", "participation_rate",
+                "voters_total", "expressed_votes",
                 )
             ):
                 return None
             _f = result["election_metadata"]["format"]
+            try:
+                real_res = {}
+                for k, idx in rsp.items():
+                    if idx in (-1, None):
+                        continue
+                    other = columns[idx]
+                    group = []
+                    for i, c in enumerate(columns):
+                        if c == other:
+                            group.append(i)
+                        elif len(group):
+                            break
+                    real_res[k] = group
+            except KeyError:
+                return None
+
             return {
-                "idx": rsp,
+                "idx": real_res,
                 "candidate_results_format": _f,
                 "candidate_results": result["candidate_results"][_f+"_mode"],
                 "confidence_score": result["election_metadata"]["confidence_score"],
@@ -140,9 +210,8 @@ class Worker:
             }
 
     async def _processing_archive_task(self, sid, election_id):
-        service = ElectionService(ElectionRepo(self.db), self.rd, self.storage)
 
-        election = await service.get(election_id)
+        election = await self.election_service.get(election_id)
         if not election:
             return
 
@@ -220,6 +289,7 @@ class Worker:
             extracted_locality = []
             async for page in _async_read_pdf(filename):
                 page_index += 1
+                print("on est sur la page:", page_index)
                 table_index = 0
                 # extract election name from page1
                 if page1 is None:
@@ -231,173 +301,293 @@ class Worker:
                     if name is not None:
                         await self.socket.emit(
                             "election_processing",
-                            {
-                                "election_name": name,
-                            },
+                            {"election_name": name},
                             to=sid
                         )
+
                 # place the cursor to the right table and calculate: columns_meta and index_row and table_index
                 if columns_meta is None:
-                    async for table_rows_data in _loop(page.extract_tables,
-                                                       table_settings=table_settings):
-
-                        column, index_row = find_pdf_utils_columns(
-                            table_rows_data
-                        )
-                        if column not in column_cache:
-                            column_cache.add(column)
+                    print("columns_meta est encore none donc on calucl pour voir si la page contient le bon tableau" )
+                    async for table_rows_data in _loop(
+                        page.extract_tables, table_settings=table_settings
+                    ):
+                        column, index_row = find_pdf_utils_columns(table_rows_data)
+                        print("ce tableau a les colonnes:", column, "sur", index_row, "lignes")
+                        if all(not c for c in column):
+                            continue
+                        if "|".join(column) not in column_cache:
+                            column_cache.add("|".join(column))
                         else:
                             continue
                         columns_meta = await self._get_columns_from_archive(
                             column, name
                         )
+                        print("le resultat: columns_meta=", columns_meta)
                         if columns_meta is not None:
                             break
                         table_index += 1
                     if columns_meta is None:
                         continue
+                print("finalement la page", page_index, "contiens bien le tableau")
                 # at this at step we got the right start page for treatment
                 candidate_results_format = columns_meta["candidate_results_format"]
-                region_idx = columns_meta["idx"]["region"]
+                region_idx   = columns_meta["idx"]["region"]
                 locality_idx = columns_meta["idx"]["locality"]
-                idxs = columns_meta["idx"]
+                idxs         = columns_meta["idx"]
                 candidate_results_idx = columns_meta["candidate_results"]
 
+                # ── Variables pour la détection des frontières par edges ──
+                # Calculées une seule fois par page pour ne pas pénaliser la perf.
+                region_boundaries   = None   # Y des lignes horizontales de la colonne région
+                locality_boundaries = None   # Y des lignes horizontales de la colonne localité
+
                 _current_table_index = 0
-                async for table in _loop(
-                        page.find_tables, table_settings=table_settings
-                ):
+                async for table in _loop(page.find_tables, table_settings=table_settings):
                     if _current_table_index < table_index:
-                        # to prevent no right table base on the top step.
+                        print("il s'agit ne sagit pas du table")
+                        # Sauter les tableaux avant celui identifié lors de la détection des colonnes
                         continue
+
+                    # ── Calculer les frontières une seule fois pour ce tableau/page ──
+                    # On récupère les X de la colonne région et localité depuis le tableau
+                    region_x0, region_x1 = await _to_async(
+                        get_column_x_bounds, table, region_idx
+                    )
+                    locality_x0, locality_x1 = await _to_async(
+                        get_column_x_bounds, table, locality_idx
+                    )
+                    table_bbox = table.bbox
+                    # Calculer les Y des edges horizontaux traversant chaque colonne
+                    if region_x0 is not None:
+                        region_boundaries = await _to_async(
+                            get_boundary_edges, page, region_x0, region_x1, table_bbox
+                        )
+                    if locality_x0 is not None:
+                        locality_boundaries = await _to_async(
+                            get_boundary_edges, page, locality_x0, locality_x1, table_bbox
+                        )
+
+                    # Réinitialiser le Y de référence au début de chaque page
+                    last_row_y = table.bbox[1]
+
+                    table_data = await _to_async(table.extract)
+
                     index = -1
-                    async for row in _loop(table.rows):
+
+                    for row in table.rows:
                         index += 1
                         if index < index_row:
+                            print("il s'agit du ligne d'entete du tableau")
                             # to don't consider the table header base on index_row calculated a few top
+                            last_row_y = row.bbox[3]
                             continue
 
-                        row_content = await _to_async(row.extract)
-                        r = (row_content[region_idx] or "").strip()
-                        if not r and not last_region:
+
+                        row_content = table_data[index]
+
+                        print("la ligne", index, "du tableau:", row_content)
+
+                        r = (get_row_content_at_idx(row_content, region_idx) or "").strip()
+                        r_is_total = (
+                                not r or
+                                re.search("\b(total|pourcentage|%)\b", str(r), flags=re.I)
+                        )
+                        if not extracted_locality and r_is_total and last_region is None:
+                            print("on a obteu certainement un ligne de total. on skip")
                             continue
-                        row_box = row.bbox
-                        # treat region
+
+                        row_box = row.bbox   # (x0, top, x1, bottom)
+                        row_bottom = row_box[3]
+
+                        # ── Détecter un franchissement de frontière RÉGION ──
+                        # Si la ligne courante dépasse un edge horizontal de la
+                        # colonne région depuis la dernière ligne traitée,
+                        # on réinitialise last_region : on sait qu'on a changé
+                        # de région mais on ne connaît pas encore son nom.
+                        if region_boundaries and has_crossed_boundary(
+                            row_box, region_boundaries, last_row_y
+                        ):
+                            print("la ligne", index, "marque le debut d'une nouvelle region", )
+                            last_region = None
+                            got_new_locality = True
+                        else:
+                            got_new_locality = locality_boundaries and has_crossed_boundary(
+                            row_box, locality_boundaries, last_row_y
+                        )
+
+                        # ── Détecter un franchissement de frontière LOCALITÉ ──
+                        # Même logique pour la localité : si on franchit un edge
+                        # horizontal de la colonne localité, on sait que la
+                        # localité précédente est terminée.
+                        if got_new_locality:
+                            print("la ligne", index, "marque le debut d'une nouvelle locality", )
+
+                            # Sauvegarder la localité précédente avant de reset
+                            if last_locality["value"]:
+                                print("on enregistre l'ancien current locality")
+                                _bbox = last_locality["cords"].get(page_index)
+                                if _bbox and isinstance(_bbox, list):
+                                    last_locality["cords"][page_index] = (
+                                        min(b[0] for b in _bbox),
+                                        min(b[1] for b in _bbox),
+                                        max(b[2] for b in _bbox),
+                                        max(b[3] for b in _bbox),
+                                    )
+                                extracted_locality.append(last_locality)
+                            last_locality = {
+                                "value": None,
+                                "cords": {},
+                                "stage": {
+                                    "region": last_region
+                                },
+                                "candidates": []
+                            }
+
+                        # Mettre à jour le Y de référence après les vérifications
+                        last_row_y = row_bottom
+
+                        # ── Traiter la valeur région ──
                         if r:
+                            # Corriger le texte inversé (texte rotatif fragmenté)
                             if r.count("\n") > 2:
                                 # texte inverse
                                 r = r.replace("\n", "")[::-1]
-                            _is_region, rr = await is_region(r)
-                            if _is_region:
-                                last_region = rr
 
+                            # Vérifier si c'est bien un nom de région connu
+                            _is_region, rr = await _to_async(is_region, r)
+                            if _is_region:
+                                print("On a le nom de la region:", rr)
+                                last_region = rr
+                                # Fill forward : si des lignes précédentes
+                                # avaient last_region = None (après un edge),
+                                # elles seront naturellement couvertes par
+                                # last_region dès maintenant.
+                                incre = len(extracted_locality) -1
+                                while incre >= 0:
+                                    _prev_extracted_locality = extracted_locality[incre]
+                                    if _prev_extracted_locality["stage"]["region"] is None:
+                                        print("obligation de faire le fillback pour mettre a jour la localite", incre)
+                                        _prev_extracted_locality["stage"]["region"] = last_region
+                                    else:
+                                        break
+                                    incre -= 1
+
+                        # ── Traiter la valeur localité ──
                         locality = str(
-                            row_content[locality_idx] or
-                            last_locality["value"] or ""
-                        ).lower()
-                        if not locality or re.search(
-                                r"\b(total|pourcentage|%)\b", locality
-                        ) or re.search(r"^[\s\d]*$", locality):
+                            get_row_content_at_idx(row_content, locality_idx) or ""
+                        )
+
+                        # Ignorer les lignes de total/pourcentage ou vides
+                        if re.search(
+                            r"\b(total|pourcentage|%)\b", locality, flags=re.IGNORECASE
+                        ) or re.search(r"^\s*\d+[\s\d]*$", locality):
+                            print("la ligne", index, " est une ligne de total -> on skip", repr(locality))
                             continue
 
-                        if locality and locality != last_locality["value"]:
-                            # je viens d'obtenir un nouveau locality
-                            if last_locality["value"]:
-                                _locality_bbox = last_locality["cords"][page_index]
-                                _locality_bbox = (
-                                    min(b[0] for b in _locality_bbox),
-                                    min(b[1] for b in _locality_bbox),
-                                    max(b[2] for b in _locality_bbox),
-                                    max(b[3] for b in _locality_bbox),
-                                )
-                                last_locality["cords"][page_index] = _locality_bbox
+                        if not locality:
+                            if not last_region and not extracted_locality:
+                                print("la ligne", index,
+                                      " est certaienement une ligne de total -> on skip",
+                                      repr(locality))
+                                continue
+                        # ── Nouvelle localité détectée ──
+                        elif locality and locality != last_locality["value"]:
+                            print("on vient d'avoir le nom de la current locality:", repr(locality))
+                            print("\tprev", last_locality)
+                            # Finaliser la localité précédente si elle existe
+                            if last_locality["value"] is None:
+                                # fill forward
+                                last_locality["value"] = locality
+
+                                # TODO: ici
+                            else:
+                                print("Normalement ce cas ne devrait pas exister vu que via les edgs on a deja traiter le prev et mis a jour le current_locality")
+                                _bbox = last_locality["cords"].get(page_index)
+                                if _bbox and isinstance(_bbox, list):
+                                    last_locality["cords"][page_index] = (
+                                        min(b[0] for b in _bbox),
+                                        min(b[1] for b in _bbox),
+                                        max(b[2] for b in _bbox),
+                                        max(b[3] for b in _bbox),
+                                    )
                                 extracted_locality.append(last_locality)
-
-                            last_locality = {
-                                "value": locality,
-                                "cords": {page_index: []},
-                                "candidates": [],
-                                "stage": {
-                                    "election_id": election_id,
-                                    "locality": locality,
-                                    "region": last_region,
-                                    "source_id": None,
-                                    **{
-                                        k: row_content[i]
-                                            for k,i in idxs.items() if (
-                                                i not in (
-                                                    -1,
-                                                    None,
-                                                    region_idx,
-                                                    locality_idx
-                                                )
-                                            )
-                                    }
+                                last_locality = {
+                                    "value": locality,
+                                    "cords": {},
+                                    "stage": {"region": last_region},
+                                    "candidates": []
                                 }
-                            }
 
+                        for k, i in idxs.items():
+                            if k in ("region", "locality") or i in (None, [None], -1, [-1]):
+                                continue
 
+                            if last_locality["stage"].get(k) is not None:
+                                continue
+                            s = get_row_content_at_idx(row_content, i)
+                            if not s:
+                                continue
+                            print("on a trouver a la ligne", index, "[%s]--"% (locality[:10],), k, "==", s)
+                            last_locality["stage"][k] = s
+
+                        # Accumuler le bbox de cette ligne dans la localité courante
+                        if page_index not in last_locality["cords"]:
+                            last_locality["cords"][page_index] = []
                         last_locality["cords"][page_index].append(row_box)
 
+                        # ── Extraire les données candidat ──
                         if candidate_results_format == "row":
+                            # Format ligne : un candidat par ligne du tableau
                             cand = {}
                             pty_idx = candidate_results_idx.get("party_idx")
 
                             if pty_idx is not None and pty_idx != -1:
-                                cand["party_ticker"] = row_content[pty_idx]
+                                cand["party_ticker"] = get_row_content_at_idx(row_content, pty_idx)
 
                             name_idx = candidate_results_idx["candidate_name_idx"]
+                            # est-ce que ce test est necessaire? dois retirer?
                             if name_idx is not None and name_idx != -1:
-                                cand["full_name"] = row_content[name_idx]
+                                cand["full_name"] = get_row_content_at_idx(row_content, name_idx)
 
                             score_idx = candidate_results_idx["score_idx"]
+                            # est-ce que ce test est necessaire? dois retirer?
                             if score_idx is not None and score_idx != -1:
-                                cand["raw_value"] = row_content[score_idx]
+                                cand["raw_value"] =get_row_content_at_idx(row_content, score_idx)
 
                             cand["bbox_json"] = [{page_index: row_box}]
-
+                            print("\t\tajout du candidat:", cand)
                             last_locality["candidates"].append(cand)
+
                         else:
-                            cand = {}
+                            # Format colonne : plusieurs candidats par ligne
                             for c in candidate_results_idx:
-                                cand["full_name"] = c["candidate_name"]
-                                cand["raw_value"] = row_content[c["score_idx"]]
+                                cand = {
+                                    "full_name": c["candidate_name"],
+                                    "raw_value": get_row_content_at_idx(row_content, c["score_idx"]),
+                                    "bbox_json": [{page_index: row_box}]
+                                }
                                 if "party_ticker" in c:
                                     cand["party_ticker"] = c["party_ticker"]
-                                cand["bbox_json"] = [{page_index: row_box}]
+                                print("\t\tajout du candidat:", cand)
+
                                 last_locality["candidates"].append(cand)
 
-                    # region end
-                    # if last_region[0]:
-                    #     _region_bbox = last_region[1][page_index]
-                    #     _region_bbox = (
-                    #         min(b[0] for b in _region_bbox),
-                    #         min(b[1] for b in _region_bbox),
-                    #         max(b[2] for b in _region_bbox),
-                    #         max(b[3] for b in _region_bbox),
-                    #     )
-                    #     region_img = await _crop(
-                    #         page, _region_bbox
-                    #     )
-                    #     last_region[1][page_index] = _region_bbox
-                    #     last_region[2].append(region_img)
-                    #     extracted_region.append(last_region)
-
+                    # ── Fin du tableau : finaliser la dernière localité de la page ──
                     if last_locality["value"]:
-                        _locality_bbox = last_locality["cords"][page_index]
-                        _locality_bbox = (
-                            min(b[0] for b in _locality_bbox),
-                            min(b[1] for b in _locality_bbox),
-                            max(b[2] for b in _locality_bbox),
-                            max(b[3] for b in _locality_bbox),
-                        )
-
-                        last_locality["cords"][page_index] = _locality_bbox
+                        _bbox = last_locality["cords"].get(page_index)
+                        if _bbox and isinstance(_bbox, list):
+                            last_locality["cords"][page_index] = (
+                                min(b[0] for b in _bbox),
+                                min(b[1] for b in _bbox),
+                                max(b[2] for b in _bbox),
+                                max(b[3] for b in _bbox),
+                            )
                         extracted_locality.append(last_locality)
 
-                    #we suppose only one right table for each page so break the loop
+                    # On suppose un seul tableau pertinent par page
                     break
 
+            # ── Fin du document : rapport d'erreur si colonnes non détectées ──
             if columns_meta is None:
                 await self.socket.emit(
                     "election_processing",
@@ -412,10 +602,7 @@ class Worker:
             else:
                 # loop on extracted_locality
                 for locality in extracted_locality:
-                    pass
-                pass
-
-
+                    print(locality)
 
     async def archive_processing(self):
         async for message in self.mr.subscribe(
