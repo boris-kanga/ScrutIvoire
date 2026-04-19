@@ -33,6 +33,12 @@ class Election:
             d["id"] = str(self.id)
         return d
 
+    def __repr__(self):
+        extra = ""
+        if hasattr(self, "id"):
+            extra += "id=" + str(self.id) + " "
+        return "<Election {}{}>".format(extra, self.name)
+
 
 class DocumentType(enum.Enum):
     PDF_ARCHIVE     = "PDF_ARCHIVE"
@@ -78,7 +84,8 @@ class Document:
             d["uploaded_at"] = self.uploaded_at
         return d
 
-
+    def __repr__(self):
+        return "<Document {}>".format(self.file_name)
 
 
 def int_parser(value):
@@ -149,8 +156,6 @@ class LocalityStagingResult:
 
     bbox_json: dict
 
-    processed_by: Optional[uuid.UUID]
-
     # candidates: List[CandidateStagingResult] = field(init=False)
 
     polling_stations_count: Optional[int] = None
@@ -193,7 +198,7 @@ class LocalityStagingResult:
         self.registered_voters_total = value_parser(int_parser, self.registered_voters_total)
         self.voters_total = value_parser(int_parser, self.voters_total)
         self.expressed_votes = value_parser(int_parser, self.expressed_votes)
-        # processed_by
+
         self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
         self.on_call_staff = value_parser(int_parser, self.on_call_staff, None)
 
@@ -220,8 +225,6 @@ class LocalityStagingResult:
             self.winner = self.winner["full_name"]
 
         self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
-
-
 
     def to_dict(self, bbox_json_as_text=False):
         d = {}

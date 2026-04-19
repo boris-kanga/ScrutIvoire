@@ -40,7 +40,6 @@ class ElectionService:
                 election_id=election.id,
                 source_id=election.doc.id,
                 bbox_json=locality["cords"],
-                processed_by=None,
                 winner=locality["winner"],
             )
 
@@ -86,7 +85,7 @@ class ElectionService:
 
             @contextlib.asynccontextmanager
             async def _():
-                async with aiofiles.tempfile.TemporaryFile(mode="w+b") as f:
+                async with aiofiles.tempfile.NamedTemporaryFile(mode="w+b", suffix=".pdf") as f:
                     await self.storage.download(
                         election_id, REPORT_FILE_NAME, f.name
                     )
@@ -101,6 +100,10 @@ class ElectionService:
 
             election.doc = doc
         return election
+
+    async def delete_archive(self, election_id):
+        await self.repo.delete_election(election_id)
+        await self.storage.delete_bucket(str(election_id))
 
     async def start_archiving_process(
             self,
@@ -130,6 +133,7 @@ class ElectionService:
             doc.storage_url
         )
 
+        print("pulication")
         await self._mr.publish(
             MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT,
             {
@@ -137,3 +141,4 @@ class ElectionService:
                 "election_id": str(election.id)
             }
         )
+        print("ok")

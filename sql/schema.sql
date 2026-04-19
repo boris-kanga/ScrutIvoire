@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users  (
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role VARCHAR(20) CHECK (role IN ('ADMIN', 'FIELD_AGENT', 'VALIDATOR')),
-    created_by UUID REFERENCES users(id), -- L'admin qui a créé ce compte
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL, -- L'admin qui a créé ce compte
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -29,12 +29,12 @@ WHERE status = 'OPEN' OR status='DRAFT';
 
 CREATE TABLE IF NOT EXISTS source_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    election_id UUID REFERENCES elections(id) NOT NULL,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
     file_name VARCHAR(255) NOT NULL,
     file_type VARCHAR(50) NOT NULL, -- 'PDF_ARCHIVE' or 'SCAN_PV'
     storage_url TEXT NOT NULL,
     integrity_hash VARCHAR(64) NOT NULL,
-    uploaded_by UUID REFERENCES users(id) NOT NULL, -- Qui a chargé le fichier
+    uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Qui a chargé le fichier
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- verification des integrite des fichiers aux etapes cles
     last_integrity_check TIMESTAMP,
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
     region VARCHAR(100),
     locality TEXT,
-    election_id UUID REFERENCES elections(id) NOT NULL,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
 
-    source_id UUID REFERENCES source_documents(id),
+    source_id UUID REFERENCES source_documents(id) ON DELETE CASCADE,
 
     polling_stations_count integer,
     on_call_staff integer,
@@ -87,12 +87,11 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
     unregistered_voters_count integer,
 
-    winner str,
+    winner TEXT,
 
     bbox_json TEXT, -- [x0, top, x1, bottom, page]
 
-    processed_by UUID REFERENCES users(id) NOT NULL, -- Agent qui a fait le scan/saisie
-    validated_by UUID REFERENCES users(id), -- Validateur qui a approuvé
+    validated_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Validateur qui a approuvé
     validation_status VARCHAR(20) DEFAULT 'PENDING',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -105,7 +104,7 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
 CREATE TABLE IF NOT EXISTS candidate_results_staging (
     id SERIAL PRIMARY KEY,
-    locality_id INTEGER REFERENCES locality_results_staging(id) NOT NULL,
+    locality_id INTEGER NOT NULL REFERENCES locality_results_staging(id) ON DELETE CASCADE,
 
     full_name VARCHAR(150),
     party_ticker VARCHAR(20),
@@ -113,7 +112,7 @@ CREATE TABLE IF NOT EXISTS candidate_results_staging (
 
     bbox_json TEXT,
 
-    validated_by UUID REFERENCES users(id), -- Validateur qui a approuvé
+    validated_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Validateur qui a approuvé
     validation_status VARCHAR(20) DEFAULT 'PENDING',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -123,6 +122,6 @@ CREATE TABLE IF NOT EXISTS candidate_results_staging (
 -- 6. TRANSACTIONAL (VOTE EN DIRECT)
 CREATE TABLE IF NOT EXISTS voter_registry (
     voter_id_hash VARCHAR(64) PRIMARY KEY,
-    election_id UUID REFERENCES elections(id),
+    election_id UUID REFERENCES elections(id) ON DELETE CASCADE,
     voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

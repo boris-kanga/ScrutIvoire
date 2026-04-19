@@ -147,5 +147,31 @@ def is_candidate_winner(status):
 
 
 
+def extract_region_locality_text(page, bbox):
+    area = page.within_bbox(bbox)
+    chars = area.chars
+    if not chars:
+        return ""
+
+    # Détecter si texte rotatif : matrix[0] ≈ 0
+    rotated = [c for c in chars if abs(c['matrix'][0]) < 0.1]
+    normal  = [c for c in chars if abs(c['matrix'][0]) > 0.5]
+
+    if not rotated or normal:
+        # Texte normal
+        return (area.extract_text() or "").replace("\n", " ").strip()
+
+    # Rotation antihoraire (matrix[1] > 0) : chars de bas en haut
+    # → trier par top décroissant et concaténer directement
+    if rotated[0]['matrix'][1] > 0:
+        rotated.sort(key=lambda c: c['top'], reverse=True)
+        return "".join(c['text'] for c in rotated).strip()
+
+    # Rotation horaire (matrix[1] < 0) : chars de haut en bas
+    # → trier par top croissant
+    rotated.sort(key=lambda c: c['top'])
+    return "".join(c['text'] for c in rotated).strip()
+
+
 
 

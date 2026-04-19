@@ -2,7 +2,10 @@ import asyncio
 import io
 import json
 import re
-from typing import List
+import traceback
+import uuid
+from functools import partial
+from typing import List, Dict
 
 import pdfplumber
 
@@ -26,7 +29,7 @@ from src.services.election_service import ElectionService
 from src.utils.tools import extract_date_from_text
 from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
     find_pdf_utils_columns, map_columns_force, get_regions, is_region, \
-    is_candidate_winner
+    is_candidate_winner, extract_region_locality_text
 
 
 def get_row_content_at_idx(row, idx):
@@ -149,7 +152,9 @@ class Worker:
             msg_broker = RedisMessageBroker(rd)
 
         if socket is None:
-            socket = AsyncRedisManager(**REDIS_CONFIG)
+            socket = AsyncRedisManager(
+                'redis://{host}:{port}'.format(**REDIS_CONFIG)
+            )
 
         if llm_repo is None:
             llm_repo = LLMRepo()
@@ -158,7 +163,7 @@ class Worker:
         self.socket           = socket
         self.llm_repo         = llm_repo
         self.mr               = msg_broker
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: Dict[str, asyncio.Task] = {}
 
     async def _get_columns_from_archive(self, columns, name):
         """
@@ -242,11 +247,14 @@ class Worker:
         }
 
     async def _processing_archive_task(self, sid, election_id):
-
+        print("debut du processing de election id", sid, election_id)
         election = await self.election_service.get(election_id)
         if not election:
-            return
+            print(election, "election pas trouver")
+            return []
 
+
+        print("going to work for election:", election)
         table_settings = {
             "vertical_strategy":        "lines",
             "horizontal_strategy":      "lines",
@@ -292,7 +300,23 @@ class Worker:
             await _to_async(_img.save, b, format="PNG")
             return b
 
+
+        async def extract_region_locality_by_prevent_rotation(_row, _idx, _page):
+            return_value = ""
+            for i in sorted(_idx):
+                _cell = _row.cells[i]
+                if _cell is None:
+                    pass
+                else:
+                    _tmp = await _to_async(
+                        extract_region_locality_text, _page, _cell
+                    )
+                    return_value += " " + _tmp
+            return return_value.strip()
+
+
         doc = election.doc
+        print("doc", doc)
         async with doc.get() as filename:
 
             page1         = None
@@ -386,7 +410,6 @@ class Worker:
                     locality_x0, locality_x1 = await _to_async(
                         get_column_x_bounds, table, locality_idx
                     )
-                    table_bbox = table.bbox
                     # Calculer les Y des edges horizontaux traversant chaque colonne
                     # REMPLACER les appels à get_boundary_edges par :
                     if region_x0 is not None:
@@ -406,8 +429,12 @@ class Worker:
                     index = -1
 
                     place_row_init_y = False
+                    col_x_bounds = {}  # {idx: (x0, x1)}
                     for row in table.rows:
                         index += 1
+                        for idx, cell in enumerate(row.cells):
+                            if cell is not None and idx not in col_x_bounds:
+                                col_x_bounds[idx] = (cell[0], cell[2])
 
                         print(f"[{page_index+1}page - line {index}]", table_data[index])
 
@@ -440,19 +467,18 @@ class Worker:
                             if locality_cell_idx < len(row.cells) else None
                         )
 
-                        # ── Valeurs textuelles ──
-                        r = (
-                            get_row_content_at_idx(row_content, region_idx) or ""
-                        ).strip()
-                        locality_raw = (
-                            get_row_content_at_idx(row_content, locality_idx) or ""
-                        ).strip()
+                        region_raw = await extract_region_locality_by_prevent_rotation(
+                            row, region_idx, page
+                        )
+                        locality_raw = await extract_region_locality_by_prevent_rotation(
+                            row,  locality_idx, page
+                        )
 
                         # ── Skip : ligne de total sur région ──
                         # Les totaux de région (ligne globale) doivent être ignorés
                         # partout dans le document.
-                        if r and re.search(
-                            r"\b(total|pourcentage|%)\b", r, flags=re.IGNORECASE
+                        if region_raw and re.search(
+                            r"\b(total|pourcentage|%)\b", region_raw, flags=re.IGNORECASE
                         ):
                             print("\tline total skip")
                             continue
@@ -532,13 +558,9 @@ class Worker:
                         #   → implique forcément une nouvelle localité.
                         # cell_region non-None + r vide     → saut de page, la région
                         #   continue depuis la page précédente : on garde last_region.
-                        if cell_region is not None and r:
+                        if cell_region is not None and region_raw:
                             print("On est sur une nouvelle zone de region")
-                            # Corriger le texte rotatif fragmenté (ex: "A\nS\nS\nA...")
-                            if r.count("\n") > 2:
-                                r = r.replace("\n", "")[::-1]
-
-                            _is_region, rr = await _to_async(is_region, r)
+                            _is_region, rr = await _to_async(is_region, region_raw)
                             if _is_region:
 
                                 # Nouvelle région → forcément nouvelle localité :
@@ -565,6 +587,7 @@ class Worker:
                                             "On vient de trouver le nom de "
                                             "current Region-->", rr
                                         )
+                                        last_locality["stage"]["region"] = rr
 
                                 last_region = rr
 
@@ -704,6 +727,42 @@ class Worker:
 
                                 last_locality["candidates"].append(cand)
 
+                    if table_data:
+                        # voir sl'il ya des donnee residuel [EDAN page 20 example]
+                        last_row_bottom = table.rows[-1].bbox[3]
+                        table_bottom = table.bbox[3]
+
+                        if table_bottom - last_row_bottom > 5:
+                            locality_seps_above = [
+                                r['top'] for r in page.rects
+                                if r['height'] < 3
+                                   and locality_x0 - 5 <= r[
+                                       'x0'] <= locality_x0 + 5
+                                   and r['width'] > page.width * 0.3
+                                   and r['top'] < last_row_bottom
+                            ]
+                            crop_top = max(
+                                locality_seps_above
+                            ) if locality_seps_above else last_row_bottom
+
+                            residual_row = []
+                            for idx in range(len(table.rows[0].cells)):
+                                bounds = col_x_bounds.get(idx)
+                                if bounds is None:
+                                    residual_row.append(None)
+                                    continue
+                                col_x0, col_x1 = bounds
+                                text = (
+                                        page.within_bbox(
+                                            (col_x0, crop_top, col_x1,
+                                             table_bottom))
+                                        .extract_text() or ""
+                                ).replace("\n", " ").strip()
+                                residual_row.append(text if text else None)
+
+                            print(f"[{page_index + 1}page - line[residuel] {index+1}]",
+                                  table_data[index])
+
                     # ── Fin de page : consolider le bbox de cette page ──
                     # La localité peut continuer sur la page suivante.
                     # On ne ferme PAS last_locality et on ne touche PAS
@@ -740,25 +799,35 @@ class Worker:
         return extracted_locality
 
     async def archive_processing(self):
-        """
-        Écoute le channel Redis PROCESSING_ELECTION_RAPPORT et lance
-        une tâche de traitement asynchrone pour chaque message reçu.
-        """
         async for message in self.mr.subscribe(
             MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT
         ):
+
+            print("on vient de recevoir un messqge")
             data        = message["data"]
             sid         = data["sid"]
             election_id = data["election_id"]
-            self._tasks.append(
-                asyncio.create_task(
+            task = asyncio.create_task(
                     self._processing_archive_task(sid, election_id)
                 )
-            )
+            _id = uuid.uuid4()
+            self._tasks[str(_id)] = task
+            print("la tache est tague avec id=", _id)
+
+            task.add_done_callback(partial(self.task_callback, _id=_id))
             await asyncio.sleep(0)
 
+    def task_callback(self, task, _id):
+        try:
+            task.result()
+        except:
+            print("exception caught --> task", _id)
+            traceback.print_exc()
+        finally:
+            self._tasks.pop(str(_id), None)
+
     async def run(self):
-        """Point d'entrée principal du worker."""
+        print("Start process")
         await asyncio.gather(
             self.archive_processing(),
         )

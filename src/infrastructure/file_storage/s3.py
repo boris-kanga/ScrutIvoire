@@ -11,6 +11,56 @@ class S3StorageAdapter:
             "region_name": region,
         }
 
+    async def delete_bucket(self, bucket_name):
+        async with self.session.client("s3", **self.config) as s3:
+            try:
+                paginator = s3.get_paginator('list_object_versions')
+                async for page in paginator.paginate(Bucket=bucket_name):
+                    # Supprimer les versions d'objets
+                    versions = page.get('Versions', [])
+                    # Supprimer les "Delete Markers" (souvent ce qui bloque la suppression)
+                    markers = page.get('DeleteMarkers', [])
+
+                    for item in versions + markers:
+                        await s3.delete_object(
+                            Bucket=bucket_name,
+                            Key=item['Key'],
+                            VersionId=item['VersionId']
+                        )
+            except Exception:
+                pass
+            # 3. Supprimer le bucket maintenant qu'il est réellement vide
+            try:
+                await s3.delete_bucket(Bucket=bucket_name)
+            except Exception:
+                pass
+
+    async def delete_all_storage(self):
+        async with self.session.client("s3", **self.config) as s3:
+            resp = await s3.list_buckets()
+            buckets = resp.get('Buckets', [])
+            for b in buckets:
+                name = b['Name']
+                try:
+                    paginator = s3.get_paginator('list_object_versions')
+                    async for page in paginator.paginate(Bucket=name):
+                        versions = page.get('Versions', [])
+                        markers = page.get('DeleteMarkers', [])
+
+                        for item in versions + markers:
+                            await s3.delete_object(
+                                Bucket=name,
+                                Key=item['Key'],
+                                VersionId=item['VersionId']
+                            )
+                except Exception:
+                    pass
+                # 3. Supprimer le bucket maintenant qu'il est réellement vide
+                try:
+                    await s3.delete_bucket(Bucket=name)
+                except Exception:
+                    pass
+
     async def file_exists(self, bucket_name, filename):
         async with self.session.client("s3", **self.config) as s3:
             try:

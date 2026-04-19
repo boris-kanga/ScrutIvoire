@@ -84,12 +84,13 @@ async def get_report_file_url(storage: FileStorageProtocol, db: PgDB, rd: RedisD
 
 @view.delete("/<election_id>/draft")
 @db_depends
-async def get_report_file_url(db: PgDB, election_id):
+async def delete_draft(storage: FileStorageProtocol, db: PgDB, rd: RedisDB, election_id):
     verify_jwt_in_request()
-    user = uuid.UUID(get_jwt_identity())
-
     repo = ElectionRepo(db)
-    await repo.delete_election(election_id)
+    service = ElectionService(repo, rd, storage)
+    user = uuid.UUID(get_jwt_identity())
+    await service.delete_archive(election_id)
+
     return jsonify({
         "ok": True
     })
