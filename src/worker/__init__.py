@@ -5,14 +5,13 @@ import re
 import traceback
 import uuid
 from functools import partial
-from typing import List, Dict
+from typing import Dict
 
 import pdfplumber
 
 from src.domain.election import LocalityStagingResult
 from src.infrastructure.database.pgdb import PgDB
 from src.infrastructure.database.redisdb import RedisDB
-from src.infrastructure.file_storage import FileStorageProtocol
 
 from socketio import AsyncRedisManager
 
@@ -26,111 +25,13 @@ from src.repository.election_repo import ElectionRepo
 from src.repository.llm_repo import LLMRepo
 
 from src.services.election_service import ElectionService
-from src.utils.tools import extract_date_from_text
+from src.worker.archive_utils import get_row_content_at_idx, _first_idx, _consolidate_bbox, \
+    get_column_x_bounds
 from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
     find_pdf_utils_columns, map_columns_force, get_regions, is_region, \
-    is_candidate_winner, extract_region_locality_text
-
-
-def get_row_content_at_idx(row, idx):
-    """
-    Extrait le contenu d'une ligne à un index donné.
-    idx peut être un int ou une liste d'int (colonnes fusionnées).
-    Concatène les valeurs non nulles séparées par un espace.
-    """
-    if isinstance(idx, int):
-        idx = [idx]
-    res = None
-    for i in sorted(idx):
-        if i >= 0:
-            if row[i] is not None:
-                res = ((res or "") + " " + str(row[i])).strip()
-    return res
-
-
-def _first_idx(idx):
-    """
-    Retourne le premier index d'un idx qui peut être int ou liste.
-    Utilisé pour accéder à row.cells[] qui n'accepte qu'un entier.
-    """
-    if isinstance(idx, list):
-        return idx[0]
-    return idx
-
-
-def _consolidate_bbox(cords, page_index):
-    """
-    Consolide la liste de bboxes d'une page en un seul bbox englobant.
-    Modifie cords en place : remplace la liste par un tuple (x0,top,x1,bottom).
-    Ne fait rien si la liste est déjà consolidée ou absente.
-    """
-    _bbox = cords.get(page_index)
-    if _bbox and isinstance(_bbox, list):
-        cords[page_index] = (
-            min(b[0] for b in _bbox),
-            min(b[1] for b in _bbox),
-            max(b[2] for b in _bbox),
-            max(b[3] for b in _bbox),
-        )
-
-
-def get_column_x_bounds(table, col_idx):
-    if isinstance(col_idx, list):
-        col_idx = col_idx[0]
-    for row in table.rows:
-        cells = row.cells
-        if col_idx < len(cells) and cells[col_idx] is not None:
-            cell = cells[col_idx]
-            return cell[0], cell[2]  # x0, x1
-    return None, None
-
-
-def get_region_separators(page, region_x0, tol=5):
-    """
-    Retourne les Y (top) des traits de séparation de région.
-    Critères : trait fin (height < 3), commence avant la colonne région,
-    traverse au moins 50% de la largeur de la page.
-    Utilise page.rects dont les coordonnées top sont fiables (pas de bug de conversion).
-    """
-    seps = []
-    min_width = page.width * 0.5
-    for r in page.rects:
-        if (
-            r['height'] < 3
-            and r['x0'] <= region_x0 + tol
-            and r['width'] >= min_width
-        ):
-            seps.append(r['top'])
-    seps.sort()
-    # Dédupliquer les paires proches (les deux bords d'un trait)
-    deduped = []
-    for y in seps:
-        if not deduped or y - deduped[-1] > 2:
-            deduped.append(y)
-    return deduped
-
-
-def get_locality_separators(page, locality_x0, tol=5):
-    """
-    Retourne les Y (top) des traits de séparation de localité.
-    Critères : trait fin (height < 3), commence à la colonne localité (pas avant),
-    traverse au moins 30% de la largeur de la page.
-    """
-    seps = []
-    min_width = page.width * 0.3
-    for r in page.rects:
-        if (
-            r['height'] < 3
-            and locality_x0 - tol <= r['x0'] <= locality_x0 + tol
-            and r['width'] >= min_width
-        ):
-            seps.append(r['top'])
-    seps.sort()
-    deduped = []
-    for y in seps:
-        if not deduped or y - deduped[-1] > 2:
-            deduped.append(y)
-    return deduped
+    is_candidate_winner, extract_region_locality_text, get_row_content_at_idx, \
+    _first_idx, _consolidate_bbox, get_column_x_bounds, get_region_separators, \
+    get_locality_separators
 
 
 class Worker:
@@ -648,19 +549,39 @@ class Worker:
                                 last_locality["value"] = locality_raw
                                 last_locality["stage"]["region"] = last_region
                             elif locality_raw != last_locality["value"]:
-                                # Cas 3 : vraie nouvelle localité
-                                print("on ferme la locality:",
-                                      repr(last_locality["value"][:10]), "...")
-                                _consolidate_bbox(last_locality["cords"], page_index)
-                                extracted_locality.append(last_locality)
-                                print("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
-                                last_locality = {
-                                    "value":      locality_raw,
-                                    "cords":      {page_index: []},
-                                    "stage":      {"region": last_region},
-                                    "candidates": [],
-                                    "winner":     None
-                                }
+                                is_fake_locality = False
+                                if not locality_sep_crossed and not region_sep_crossed:
+                                    # le nom de la locality est sur plusieurs ligne peut-etre
+                                    # il faut imperativemet que ces ligne aient ...
+                                    needed_v = (
+                                        "registered_voters_total",
+                                        "voters_total",
+                                        "expressed_votes"
+                                    )
+                                    for k in needed_v:
+                                        i = idxs[k]
+                                        s = get_row_content_at_idx(
+                                            row_content, i
+                                        )
+                                        if not s:
+                                            is_fake_locality = True
+                                            break
+                                if not is_fake_locality:
+                                    # Cas 3 : vraie nouvelle localité
+                                    print("on ferme la locality:",
+                                          repr(last_locality["value"][:10]), "...")
+                                    _consolidate_bbox(last_locality["cords"], page_index)
+                                    extracted_locality.append(last_locality)
+                                    print("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
+                                    last_locality = {
+                                        "value":      locality_raw,
+                                        "cords":      {page_index: []},
+                                        "stage":      {"region": last_region},
+                                        "candidates": [],
+                                        "winner":     None
+                                    }
+                                else:
+                                    last_locality["value"] += " " + locality_raw
                             # Cas 4 (locality_raw == last_locality["value"]) :
                             # même localité, rien à faire.
 

@@ -68,4 +68,4 @@ async def test_treatment_of_an_archive():
 
     extracted_locality = await worker._processing_archive_task("test", "test")
     print(len(extracted_locality))
-    assert len(extracted_locality) == 206
+    assert len(extracted_locality) == 205
