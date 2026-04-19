@@ -387,7 +387,11 @@ class Worker:
                 # ── Index des colonnes utiles ──
                 candidate_results_format = columns_meta["candidate_results_format"]
                 region_idx            = columns_meta["idx"]["region"]
+                if not isinstance(region_idx, list):
+                    region_idx = [region_idx]
                 locality_idx          = columns_meta["idx"]["locality"]
+                if not isinstance(locality_idx, list):
+                    locality_idx = [locality_idx]
                 idxs                  = columns_meta["idx"]
                 candidate_results_idx = columns_meta["candidate_results"]
 
@@ -433,8 +437,14 @@ class Worker:
                     for row in table.rows:
                         index += 1
                         for idx, cell in enumerate(row.cells):
-                            if cell is not None and idx not in col_x_bounds:
-                                col_x_bounds[idx] = (cell[0], cell[2])
+                            if cell is not None:
+                                if idx not in col_x_bounds:
+                                    col_x_bounds[idx] = (cell[0], cell[2])
+                                else:
+                                    col_x_bounds[idx] = (
+                                        max(col_x_bounds[idx][0], cell[0]),
+                                        min(col_x_bounds[idx][1], cell[2])
+                                    )
 
                         print(f"[{page_index+1}page - line {index}]", table_data[index])
 
@@ -560,6 +570,7 @@ class Worker:
                         #   continue depuis la page précédente : on garde last_region.
                         if cell_region is not None and region_raw:
                             print("On est sur une nouvelle zone de region")
+                            # _is_region, rr = True, region_raw
                             _is_region, rr = await _to_async(is_region, region_raw)
                             if _is_region:
 
@@ -675,7 +686,6 @@ class Worker:
                             last_locality["cords"][page_index] = []
                         last_locality["cords"][page_index].append(row_box)
 
-                        # ── Extraire les données candidat ──
                         if candidate_results_format == "row":
                             # Un candidat par ligne du tableau
                             cand = {}
@@ -744,7 +754,11 @@ class Worker:
                             crop_top = max(
                                 locality_seps_above
                             ) if locality_seps_above else last_row_bottom
-
+                            row_residual_box = (
+                                table.bbox[0], crop_top,
+                                table.bbox[2],
+                                table.bbox[3]
+                            )
                             residual_row = []
                             for idx in range(len(table.rows[0].cells)):
                                 bounds = col_x_bounds.get(idx)
@@ -752,16 +766,196 @@ class Worker:
                                     residual_row.append(None)
                                     continue
                                 col_x0, col_x1 = bounds
-                                text = (
-                                        page.within_bbox(
-                                            (col_x0, crop_top, col_x1,
-                                             table_bottom))
-                                        .extract_text() or ""
-                                ).replace("\n", " ").strip()
+                                cell = (col_x0, crop_top, col_x1, table_bottom)
+                                if idx in locality_idx + region_idx and False:
+                                    text = await _to_async(
+                                        extract_region_locality_text,
+                                        page, cell
+                                    )
+                                else:
+                                    crop_ = await _to_async(
+                                        page.within_bbox,cell
+                                    )
+                                    text = await _to_async(
+                                        crop_.extract_text
+                                    )
+                                    text = (text or "").replace("\n", " ").strip()
+
                                 residual_row.append(text if text else None)
 
                             print(f"[{page_index + 1}page - line[residuel] {index+1}]",
-                                  table_data[index])
+                                  residual_row)
+                            region_raw = get_row_content_at_idx(
+                                residual_row, region_idx
+                            )
+                            print("\tregion via residu", repr(region_raw)[:30])
+                            if region_raw:
+                                #_is_region, rr = True, region_raw
+                                _is_region, rr = await _to_async(is_region, region_raw)
+                                if _is_region:
+                                    print(
+                                        "\tOn est sur une nouvelle zone de region")
+
+                                    # Nouvelle région → forcément nouvelle localité :
+                                    # fermer la localité courante si elle a une valeur.
+                                    if last_region is not None and last_region != rr:
+                                        print(
+                                            "On est sur une nouvelle zone de region\n\tRegion=",
+                                            repr(rr))
+                                        if last_locality["value"] is not None:
+                                            print("on ferme la locality:", repr(
+                                                last_locality["value"][:10]),
+                                                  "...")
+                                            _consolidate_bbox(
+                                                last_locality["cords"], page_index)
+                                            extracted_locality.append(
+                                                last_locality)
+
+                                        # Réinitialiser last_locality en attente du nom
+                                        print("on est sur une nouvelle locality ")
+                                        last_locality = {
+                                            "value": None,
+                                            "cords": {},
+                                            "stage": {"region": rr},
+                                            "candidates": [],
+                                            "winner": None
+                                        }
+                                    else:
+                                        if last_region != rr:
+                                            print(
+                                                "On vient de trouver le nom de "
+                                                "current Region-->", rr
+                                            )
+                                            last_locality["stage"]["region"] = rr
+
+                                    last_region = rr
+
+                                    # Fill back : propager last_region aux localités
+                                    # extraites dont la région était encore None
+                                    # (localité traitée avant que son nom de région
+                                    # soit apparu dans le flux).
+                                    i = len(extracted_locality) - 1
+                                    while i >= 0:
+                                        prev = extracted_locality[i]
+                                        if prev["stage"].get("region") is None:
+                                            prev["stage"]["region"] = last_region
+                                        else:
+                                            break
+                                        i -= 1
+
+                            locality_raw = get_row_content_at_idx(
+                                residual_row, locality_idx
+                            )
+                            print("\tlocality via residu", repr(locality_raw)[:30])
+
+                            if locality_raw:
+                                if last_locality["value"] is None:
+                                    print(
+                                        "\ton vient de trouver le nom de la localite=",
+                                        repr(locality_raw[:20]), "...")
+
+                                    # Cas 2 : fill forward
+                                    last_locality["value"] = locality_raw
+                                    last_locality["stage"][
+                                        "region"] = last_region
+                                elif locality_raw != last_locality["value"]:
+                                    # Cas 3 : vraie nouvelle localité
+                                    print("on ferme la locality:",
+                                          repr(last_locality["value"][:10]),
+                                          "...")
+                                    _consolidate_bbox(last_locality["cords"],
+                                                      page_index)
+                                    extracted_locality.append(last_locality)
+                                    print("on est sur une nouvelle locality",
+                                          repr(locality_raw[:10]), "...")
+                                    last_locality = {
+                                        "value": locality_raw,
+                                        "cords": {page_index: []},
+                                        "stage": {"region": last_region},
+                                        "candidates": [],
+                                        "winner": None
+                                    }
+
+                            for k, i in idxs.items():
+                                if k in ("region", "locality"):
+                                    continue
+                                if i in (None, [None], -1, [-1]):
+                                    continue
+                                if last_locality["stage"].get(k) is not None:
+                                    continue
+                                s = get_row_content_at_idx(residual_row, i)
+                                if not s:
+                                    continue
+                                print("\t", repr(k), "-->", s)
+                                last_locality["stage"][k] = s
+
+                            if page_index not in last_locality["cords"]:
+                                last_locality["cords"][page_index] = []
+                            last_locality["cords"][page_index].append(row_residual_box)
+
+                            row_residual_box_single = (
+                                table.bbox[0], last_row_bottom,
+                                table.bbox[2],
+                                table.bbox[3]
+                            )
+                            if candidate_results_format == "row":
+                                # Un candidat par ligne du tableau
+                                cand = {}
+
+                                pty_idx = candidate_results_idx.get(
+                                    "party_idx")
+                                if pty_idx is not None and pty_idx != -1:
+                                    cand[
+                                        "party_ticker"] = get_row_content_at_idx(
+                                        residual_row, pty_idx
+                                    )
+
+                                name_idx = candidate_results_idx.get(
+                                    "candidate_name_idx")
+                                if name_idx is not None and name_idx != -1:
+                                    cand["full_name"] = get_row_content_at_idx(
+                                        residual_row, name_idx
+                                    )
+
+                                score_idx = candidate_results_idx.get(
+                                    "score_idx")
+                                if score_idx is not None and score_idx != -1:
+                                    cand["raw_value"] = get_row_content_at_idx(
+                                        residual_row, score_idx
+                                    )
+
+                                cand["bbox_json"] = [{page_index: row_residual_box_single}]
+                                print("\t\tajout du candidat:", str(cand)[:30])
+                                last_locality["candidates"].append(cand)
+                                status_idx = candidate_results_idx.get(
+                                    "status_idx")
+                                if status_idx not in (-1, None):
+                                    cand["winner"] = is_candidate_winner(
+                                        get_row_content_at_idx(
+                                            residual_row, status_idx
+                                        )
+                                    )
+                                    if cand["winner"]:
+                                        last_locality["winner"] = cand
+
+                            else:
+                                # Plusieurs candidats par ligne (format colonne)
+                                for c in candidate_results_idx:
+                                    cand = {
+                                        "full_name": c["candidate_name"],
+                                        "raw_value": get_row_content_at_idx(
+                                            residual_row, c["score_idx"]
+                                        ),
+                                        "bbox_json": [{page_index: row_residual_box_single}]
+                                    }
+                                    if "party_ticker" in c:
+                                        cand["party_ticker"] = c["party_ticker"]
+                                    print("\t\tajout du candidat:",
+                                          str(cand)[:30])
+
+                                    last_locality["candidates"].append(cand)
+
+
 
                     # ── Fin de page : consolider le bbox de cette page ──
                     # La localité peut continuer sur la page suivante.
