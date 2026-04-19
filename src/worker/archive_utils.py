@@ -173,5 +173,102 @@ def extract_region_locality_text(page, bbox):
     return "".join(c['text'] for c in rotated).strip()
 
 
+def get_row_content_at_idx(row, idx):
+    """
+    Extrait le contenu d'une ligne à un index donné.
+    idx peut être un int ou une liste d'int (colonnes fusionnées).
+    Concatène les valeurs non nulles séparées par un espace.
+    """
+    if isinstance(idx, int):
+        idx = [idx]
+    res = None
+    for i in sorted(idx):
+        if i >= 0:
+            if row[i] is not None:
+                res = ((res or "") + " " + str(row[i])).strip()
+    return res
 
 
+def _first_idx(idx):
+    """
+    Retourne le premier index d'un idx qui peut être int ou liste.
+    Utilisé pour accéder à row.cells[] qui n'accepte qu'un entier.
+    """
+    if isinstance(idx, list):
+        return idx[0]
+    return idx
+
+
+def _consolidate_bbox(cords, page_index):
+    """
+    Consolide la liste de bboxes d'une page en un seul bbox englobant.
+    Modifie cords en place : remplace la liste par un tuple (x0,top,x1,bottom).
+    Ne fait rien si la liste est déjà consolidée ou absente.
+    """
+    _bbox = cords.get(page_index)
+    if _bbox and isinstance(_bbox, list):
+        cords[page_index] = (
+            min(b[0] for b in _bbox),
+            min(b[1] for b in _bbox),
+            max(b[2] for b in _bbox),
+            max(b[3] for b in _bbox),
+        )
+
+
+def get_column_x_bounds(table, col_idx):
+    if isinstance(col_idx, list):
+        col_idx = col_idx[0]
+    for row in table.rows:
+        cells = row.cells
+        if col_idx < len(cells) and cells[col_idx] is not None:
+            cell = cells[col_idx]
+            return cell[0], cell[2]  # x0, x1
+    return None, None
+
+
+def get_region_separators(page, region_x0, tol=5):
+    """
+    Retourne les Y (top) des traits de séparation de région.
+    Critères : trait fin (height < 3), commence avant la colonne région,
+    traverse au moins 50% de la largeur de la page.
+    Utilise page.rects dont les coordonnées top sont fiables (pas de bug de conversion).
+    """
+    seps = []
+    min_width = page.width * 0.5
+    for r in page.rects:
+        if (
+            r['height'] < 3
+            and r['x0'] <= region_x0 + tol
+            and r['width'] >= min_width
+        ):
+            seps.append(r['top'])
+    seps.sort()
+    # Dédupliquer les paires proches (les deux bords d'un trait)
+    deduped = []
+    for y in seps:
+        if not deduped or y - deduped[-1] > 2:
+            deduped.append(y)
+    return deduped
+
+
+def get_locality_separators(page, locality_x0, tol=5):
+    """
+    Retourne les Y (top) des traits de séparation de localité.
+    Critères : trait fin (height < 3), commence à la colonne localité (pas avant),
+    traverse au moins 30% de la largeur de la page.
+    """
+    seps = []
+    min_width = page.width * 0.3
+    for r in page.rects:
+        if (
+            r['height'] < 3
+            and locality_x0 - tol <= r['x0'] <= locality_x0 + tol
+            and r['width'] >= min_width
+        ):
+            seps.append(r['top'])
+    seps.sort()
+    deduped = []
+    for y in seps:
+        if not deduped or y - deduped[-1] > 2:
+            deduped.append(y)
+    return deduped
