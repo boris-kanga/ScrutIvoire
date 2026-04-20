@@ -110,7 +110,11 @@ class CandidateStagingResult:
 
     bbox_json: dict
 
+    is_independent: Optional[bool]
+
     party_ticker: str = None
+
+    winner: Optional[bool] = None
 
     validated_by: Optional[uuid.UUID] = None
 
@@ -125,15 +129,18 @@ class CandidateStagingResult:
         assert self.full_name
         self.raw_value = value_parser(int_parser, self.raw_value, 0)
 
-    def to_dict(self, bbox_json_as_text=False):
+    def to_dict(self, bbox_json_as_text=False, not_winner=True):
         d = {}
         for k in self.__annotations__:
-            if k not in ("id", "created_at"):
+            if k not in ("id", "created_at", "winner"):
                 v = getattr(self, k)
                 if v is not None:
                     d[k] = v
         if getattr(self, "id", None) is not None:
             d["id"] = self.id
+
+        if not not_winner:
+            d["winner"] = self.winner
 
         if getattr(self, "created_at", None) is not None:
             d["created_at"] = self.created_at
@@ -180,8 +187,6 @@ class LocalityStagingResult:
 
     unregistered_voters_count: Optional[int] = None
 
-    winner: Optional[str] = None
-
     validated_by: Optional[uuid.UUID] = None
 
     validation_status: str = "PENDING"
@@ -220,9 +225,6 @@ class LocalityStagingResult:
         self.blank_ballots_count = value_parser(int_parser, self.blank_ballots_count, None)
 
         self.unregistered_voters_count = value_parser(int_parser, self.unregistered_voters_count, None)
-
-        if isinstance(self.winner, dict):
-            self.winner = self.winner["full_name"]
 
         self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
 

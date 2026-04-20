@@ -1,6 +1,8 @@
 import uuid
 from typing import List
 
+from kb_tools.tools import get_buffer
+
 from src.domain.election import Election, Document, DocumentType, \
     LocalityStagingResult, CandidateStagingResult
 from src.infrastructure.database.pgdb import PgDB
@@ -56,6 +58,80 @@ class ElectionRepo:
         )
         doc.id = uuid.UUID(str(meta["id"]))
         return doc
+
+    async def get_stat(self, election_ids):
+        res = []
+        for b in get_buffer(election_ids, max_buffer=2000, vv=False):
+
+            if not b:
+                continue
+            res += await self.db.run_query(
+                f"""
+                WITH winner AS (
+                    SELECT 
+                        locality_id,
+                        count(*) as winner_count
+                    FROM locality_winner w INNER JOIN
+                        candidate_results_staging c
+                        ON c.id = w.candidate_id
+                    GROUP BY locality_id
+                )
+                SELECT 
+                    election_id,
+                    sum(voters_total) AS voters_total,
+                    sum(expressed_votes) AS expressed_votes,
+                    sum(pop_size) AS pop_size,
+                    SUM(registered_voters_total) AS registered_voters_total,
+                    SUM(winner_count) AS nb_seat
+                FROM locality_results_staging l LEFT JOIN winner
+                    ON l.id = winner.locality_id
+                WHERE election_id IN (
+                {",".join("$%s"%(i+1) for i in range(len(b)))}
+                )
+                GROUP BY election_id
+                """, params=tuple(b)
+            )
+        return res
+
+    async def get_all_elections(self):
+        els = await self.db.run_query(
+            """
+            SELECT * FROM elections
+            """
+        )
+        return [self._dict_to_election(el) for el in els]
+
+    async def get_locality_participation_rate(self, election_id):
+        return await self.db.run_query(
+            """
+            SELECT 
+                id, 
+                locality,
+                participation_rate
+            FROM locality_results_staging
+            WHERE election_id = $1
+            """, params=(election_id,)
+        )
+
+    async def election_winner(self, election_id):
+        return await self.db.run_query(
+            """
+            SELECT
+                party_ticker, 
+                full_name,
+                l.id AS locality_id,
+                locality, 
+                region,
+                is_independent
+            FROM 
+                locality_results_staging l INNER JOIN 
+                candidate_results_staging c
+                    ON l.id = c.locality_id
+                INNER JOIN locality_winner w
+                    ON w.candidate_id = c.id
+            WHERE election_id = $1
+            """, params=(election_id,)
+        )
 
     async def create_election_document(self, doc: Document):
         _id = await self.db.insert(
@@ -116,20 +192,27 @@ class ElectionRepo:
         return election
 
     async def insert_archived_staging_data(
-            self, *, locality: List[LocalityStagingResult]=None,
-            candidate: List[CandidateStagingResult]=None
+            self, *, localities: List[LocalityStagingResult]=None,
+            candidates: List[CandidateStagingResult]=None,
+            locality_winners=None
     ):
         res = None
-        if locality:
+        if localities:
             res = await self.db.insert_many(
-                [s.to_dict(bbox_json_as_text=True) for s in locality],
+                [s.to_dict(bbox_json_as_text=True) for s in localities],
                 "locality_results_staging",
                 id_field="id"
             )
-        else:
-            await self.db.insert_many(
-                [s.to_dict(bbox_json_as_text=True) for s in candidate],
+        elif candidates:
+            res = await self.db.insert_many(
+                [s.to_dict(bbox_json_as_text=True) for s in candidates],
                 "candidate_results_staging",
+                id_field="id"
+            )
+        elif locality_winners:
+            res = await self.db.insert_many(
+                locality_winners,
+                "locality_winner",
                 id_field="id"
             )
         return res

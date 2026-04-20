@@ -146,6 +146,48 @@ def is_candidate_winner(status):
     return generate_candidate("%elu%", "%vain%") == status
 
 
+def idx_to_cords(col_x_bounds, idx):
+    if not isinstance(idx, list):
+        idx = [idx]
+    c = None
+    for idx_ in idx:
+        idx_ = col_x_bounds.get(idx_)
+        if not idx_:
+            continue
+        x0, x1 = idx_
+        if c is None:
+            c = idx_
+        else:
+            c = (
+                min([c[0], idx_[0]]),
+                min([c[1], idx_[1]]),
+                max([c[2], idx_[2]]),
+                max([c[3], idx_[3]]),
+            )
+
+    return c
+
+
+def get_text_within_bbox(page, elm_idx, bounds_x_col, y0, y1, tolerance=3):
+    if not isinstance(elm_idx, list):
+        if elm_idx is None:
+            return ""
+        elm_idx = [elm_idx]
+    text = ""
+    for i in sorted(elm_idx):
+        if i in (-1, None):
+            continue
+        b = bounds_x_col.get(i)
+
+        if not b:
+            continue
+        x0, x1 = b
+        cell = (
+            x0, y0-tolerance, x1, y1
+        )
+        text += (page.within_bbox(cell).extract_text() or "")
+    return text.replace("\n", " ").strip()
+
 
 def extract_region_locality_text(page, bbox):
     area = page.within_bbox(bbox)

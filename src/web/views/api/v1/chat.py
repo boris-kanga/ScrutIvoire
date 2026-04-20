@@ -1,0 +1,60 @@
+import traceback
+from datetime import timedelta
+
+from flask import Blueprint, jsonify, request
+
+from flask_jwt_extended import create_access_token, set_access_cookies
+
+
+from src.domain.user import UserError
+from src.infrastructure.database.pgdb import PgDB
+from src.repository.election_repo import ElectionRepo
+from src.services.election_service import ElectionService
+from src.web import db_depends
+
+
+view = Blueprint('chat', __name__, url_prefix="/chat")
+
+
+@view.get('/')
+@db_depends
+async def ask(db: PgDB, rd, storage):
+    raise NotImplementedError()
+
+
+
+@view.get('/base-stat/<archive_id>')
+@db_depends
+async def stat_indiv(db: PgDB, rd, storage, archive_id):
+    service = ElectionService(
+        ElectionRepo(db), rd, storage
+    )
+    election = await service.get(archive_id)
+    charts = []
+    if election.type in ("legislative", ""):
+        top_5_locality = await service.top_n_locality(
+            election
+        )
+        charts.append([
+            "table", {
+                "title": "Top 5 Localités",
+                "columns": ["Localité", "%Part."],
+                "rows": [
+                    [r["locality"], str(round(100 * r["participation_rate"], 1))+"%"]
+                    for r in top_5_locality
+                ]
+            }
+        ])
+        party_ticker_repr = await service.party_ticker_repr(
+            election
+        )
+        charts.append(["bar", [
+            {"label": x[0], "value": x[1]} for x in party_ticker_repr
+        ]])
+
+    return jsonify({
+        "ok": True, "election": election.to_dict(),
+        "archive_file_name": election.doc.file_name,
+        "charts": charts
+    })
+

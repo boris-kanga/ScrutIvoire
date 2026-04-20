@@ -77,6 +77,14 @@
         }
     </script>
     <style>
+         .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        /* On la cache pour Firefox et IE/Edge */
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
@@ -146,6 +154,175 @@
     socket.on("connect", (a, b, c)=>{
         console.log(a, b, c);
     })
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" integrity="sha512-vc58qvvBdrDR4etbxMdlTt4GBQk1qjvyORR2nrsPsFPyrs+/u5c3+1Ct6upOgdZoIl7eq6k3a1UPDSNAQi/32A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script>
+    function createBarChart({ id, data, orientation = 'horizontal', color = '#f97316', class_="" }) {
+
+        // On utilise setTimeout pour s'assurer que le HTML est injecté avant de chercher l'ID
+        setTimeout(() => {
+            const container = document.getElementById(id);
+            if (!container) return;
+
+            // 1. Initialisation de l'Observer de taille
+            const ro = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    if (width > 0 && height > 0) {
+                        render(width, height);
+                    }
+                }
+            });
+
+            ro.observe(container);
+
+            // 2. Fonction de dessin (appelée à chaque changement de taille)
+            function render(width, height) {
+                // Nettoyage systématique de l'ancien SVG
+                d3.select(container).selectAll("svg").remove();
+
+                const margin = {
+                    top: 10,
+                    right: 20,
+                    bottom: orientation === 'vertical' ? 40 : 20,
+                    left: orientation === 'horizontal' ? 70 : 40
+                };
+
+                const svg = d3.select(container)
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height)
+                    .attr("class", "overflow-visible");
+
+                if (orientation === 'horizontal') {
+                    // --- MODE HORIZONTAL ---
+                    const x = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => d.value)])
+                        .range([margin.left, width - margin.right]);
+
+                    const y = d3.scaleBand()
+                        .domain(data.map(d => d.label))
+                        .range([margin.top, height - margin.bottom])
+                        .padding(0.3);
+
+                    // Barres
+                    svg.selectAll("rect")
+                        .data(data)
+                        .enter()
+                        .append("rect")
+                        .attr("x", margin.left)
+                        .attr("y", d => y(d.label))
+                        .attr("width", d => x(d.value) - margin.left)
+                        .attr("height", y.bandwidth())
+                        .attr("fill", color)
+                        .attr("rx", 4);
+
+                    // Axe Y (Labels à gauche)
+                    svg.append("g")
+                        .attr("transform", `translate(${margin.left}, 0)`)
+                        .call(d3.axisLeft(y).tickSize(0).tickPadding(8))
+                        .attr("color", "#71717a") // text-zinc-500
+                        .selectAll("text")
+                        .attr("class", "text-[10px]")
+                        .style("font-family", "inherit");
+
+                } else {
+                    // --- MODE VERTICAL ---
+                    const x = d3.scaleBand()
+                        .domain(data.map(d => d.label))
+                        .range([margin.left, width - margin.right])
+                        .padding(0.3);
+
+                    const y = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => d.value)])
+                        .range([height - margin.bottom, margin.top]);
+
+                    // Barres
+                    svg.selectAll("rect")
+                        .data(data)
+                        .enter()
+                        .append("rect")
+                        .attr("x", d => x(d.label))
+                        .attr("y", d => y(d.value))
+                        .attr("width", x.bandwidth())
+                        .attr("height", d => (height - margin.bottom) - y(d.value))
+                        .attr("fill", color)
+                        .attr("rx", 4);
+
+                    // Axe X (Labels en bas)
+                    const xAxis = svg.append("g")
+                        .attr("transform", `translate(0, ${height - margin.bottom})`)
+                        .call(d3.axisBottom(x).tickSize(0).tickPadding(8))
+                        .attr("color", "#71717a");
+
+                    // Rotation des labels si trop serrés
+                    if (width < 300) {
+                        xAxis.selectAll("text")
+                            .attr("transform", "rotate(-45)")
+                            .style("text-anchor", "end");
+                    }
+                }
+
+                // Supprimer la ligne des axes pour un look moderne
+                svg.selectAll(".domain").remove();
+            }
+        }, 0);
+
+        // Retourne le conteneur avec des classes Tailwind pour la flexibilité
+        return `<div id="${id}" class="w-full h-full min-h-[180px] flex-1 overflow-hidden ${class_}"></div>`;
+    }
+
+
+
+    function createDataCard({ title, icon, columns, rows, id, style, class_}) {
+        const colCount = columns.length;
+        // On définit la structure de la grille une seule fois pour la cohérence
+        const gridStyle = `display: grid; grid-template-columns: 2fr ${'1fr '.repeat(colCount - 1)}; gap: 0.5rem; align-items: center;`;
+
+        // Header
+        const headerHtml = `
+            <div style="${gridStyle}" class="text-[11px] border-b border-white/5 pb-1 text-zinc-600">
+                ${columns.map((col, idx) => `
+                    <span class="truncate whitespace-nowrap ${idx > 0 ? 'text-right' : ''}" title="${col}">${col}</span>
+                `).join('')}
+            </div>`;
+
+        // Lignes
+        const rowsHtml = rows.map(row => `
+            <div style="${gridStyle}" class="text-xs h-7">
+                <span class="text-zinc-300 truncate whitespace-nowrap min-w-0" title="${row[0]}">
+                    ${row[0]}
+                </span>
+                ${row.slice(1).map(cell => `
+                    <span class="text-right font-medium text-zinc-400 truncate whitespace-nowrap min-w-0" title="${cell}">
+                        ${cell}
+                    </span>
+                `).join('')}
+            </div>
+        `).join('');
+
+        return `
+            <div ${style? ('style="'+style+'"'): ''} ${id? ('id="'+id+'"'): ''} class="${class_||""} group relative glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 cursor-zoom-in overflow-hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest truncate mr-2">${title}</span>
+                    <span class="material-symbols-outlined text-[16px] text-orange-500 shrink-0">${icon || 'table_chart'}</span>
+                </div>
+                <div class="space-y-1">
+                    ${headerHtml}
+                    <div class="pt-1.5">
+                        ${rowsHtml}
+                    </div>
+                </div>
+                <!-- Hover Overlay -->
+                <div class="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
+                    <div class="flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-white text-3xl">zoom_in</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-white">Détails</span>
+                    </div>
+                </div>
+            </div>`;
+    }
 </script>
 {% block script %}{% endblock %}
 

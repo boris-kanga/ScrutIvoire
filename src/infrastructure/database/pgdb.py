@@ -220,7 +220,7 @@ class PgDB:
                     x for b in buffer for x in b
                 ]
                 placeholder = ",".join([
-                    f"(${i + 1}" if i % k == 0 else
+                    f"(${i + 1}" + (")" if k==1 else "") if i % k == 0 else
                     (f"${i + 1})" if i % k == k_1 else f"${i + 1}")
                     for i in range(len(buffer))
                 ])

@@ -1,4 +1,5 @@
 import contextlib
+import re
 import uuid
 from functools import partial
 from typing import Optional
@@ -29,6 +30,43 @@ class ElectionService:
 
         self.storage = storage
 
+    async def get_all(self):
+        els = await self.repo.get_all_elections()
+        stats = await self.repo.get_stat(
+            [e.id for e in els],
+        )
+        stats = {
+            str(s["election_id"]): s
+            for s in stats
+        }
+
+        return [
+            {
+                **(stats.get(str(el.id)) or {}),
+                **el.to_dict(),
+                "nat": (el.type or "").lower() in ("presidential", "referendum")
+            }
+            for el in els
+        ]
+
+    async def top_n_locality(self, election, n=5):
+        res = await self.repo.get_locality_participation_rate(election.id)
+        return sorted(res, key=lambda r: r["participation_rate"], reverse=True)[:n]
+
+    async def party_ticker_repr(self, election):
+        winners = await self.repo.election_winner(election.id)
+        party_ticker = {}
+        independent = 0
+        for winner in winners:
+            if winner["is_independent"]:
+                independent += 1
+                continue
+            party_ticker.setdefault(winner["party_ticker"], []).append(1)
+        party_ticker = [[p, sum(s)] for p, s in party_ticker.items()]
+        party_ticker = sorted(party_ticker, key=lambda r: r[1], reverse=True)
+        party_ticker.append(["INDEPENDANT", independent])
+        return party_ticker
+
     async def add_extracted_archive_data(self, extracted_locality, election):
         locality_staging = []
         candidate_staging = []
@@ -40,13 +78,13 @@ class ElectionService:
                 election_id=election.id,
                 source_id=election.doc.id,
                 bbox_json=locality["cords"],
-                winner=locality["winner"],
             )
 
             locality_staging.append(staging)
         ids = await self.repo.insert_archived_staging_data(
-            locality=locality_staging
+            localities=locality_staging
         )
+        reg = re.compile(r"\bi+n+d+\wp+e+n+", flags=re.IGNORECASE)
         for i, locality in enumerate(extracted_locality):
             for c in locality["candidates"]:
                 c = CandidateStagingResult(
@@ -54,12 +92,27 @@ class ElectionService:
                     full_name=c["full_name"],
                     raw_value=c["raw_value"],
                     bbox_json=c["bbox_json"],
-                    party_ticker=c["party_ticker"]
+                    party_ticker=c["party_ticker"],
+                    winner=c.get("winner"),
+                    is_independent=(
+                        None if not c["party_ticker"] else
+                        reg.search(c["party_ticker"]) is not None
+                    )
                 )
                 candidate_staging.append(c)
-        await self.repo.insert_archived_staging_data(
-            candidate=candidate_staging
+        ids = await self.repo.insert_archived_staging_data(
+            candidates=candidate_staging
         )
+        winners = []
+        for i, c in enumerate(candidate_staging):
+            if c.winner:
+                winners.append({
+                    "candidate_id": ids[i]
+                })
+        await self.repo.insert_archived_staging_data(
+            locality_winners=winners
+        )
+
 
     async def get_report_url(self, election_id):
         return await self.storage.get_presigned_url(
@@ -81,7 +134,7 @@ class ElectionService:
         if not election:
             return None
 
-        if await self.storage.file_exists(election_id, REPORT_FILE_NAME):
+        if await self.storage.file_exists(str(election_id), REPORT_FILE_NAME):
 
             @contextlib.asynccontextmanager
             async def _():

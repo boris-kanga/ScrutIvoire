@@ -288,6 +288,10 @@
 
 <script>
 
+    socket.on("election_processing", (data)=>{
+        console.log(data);
+    })
+
     const PDFReader = PDFViewer(
         'pdf-canvas'
         ,{
@@ -314,7 +318,7 @@
             formData.append('archive', file);
             formData.append('hash', hash);
             formData.append('socket_id', socket.id);
-
+            $("#file").val("");
             const xhr = new XMLHttpRequest();
             xhr.withCredentials = true;
 
@@ -396,16 +400,25 @@
         $("#header-new").addClass("kb-hidden");
         $("#preview").addClass("kb-hidden");
         fetch(
-            config_app.api_base+"/election/"+file+"/draft",
+            config_app.api_base+"/election/"+get_new_election_id()+"/draft",
             {
-                method: "DELETE"
+                method: "DELETE",
+                headers: {
+                    'X-CSRF-TOKEN': getCookie('csrf_access_token') // Nom par défaut
+                },
+                credentials: 'same-origin' // Obligatoire pour envoyer les cookies
             }
         )
                 .then(resp=>{
                     return resp.json();
                 })
                 .then(d=>{
-                    PDFReader.load(d.url);
+                    const url = new URL(window.location);
+                    // Supprime tous les paramètres
+                    url.search = "";
+
+                    // Met à jour l'URL dans la barre du navigateur sans recharger
+                    window.history.replaceState({}, document.title, url.toString());
                 })
 
     }

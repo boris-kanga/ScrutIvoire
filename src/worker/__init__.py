@@ -25,8 +25,9 @@ from src.repository.election_repo import ElectionRepo
 from src.repository.llm_repo import LLMRepo
 
 from src.services.election_service import ElectionService
-from src.worker.archive_utils import get_row_content_at_idx, _first_idx, _consolidate_bbox, \
-    get_column_x_bounds
+from src.worker.archive_utils import get_row_content_at_idx, _first_idx, \
+    _consolidate_bbox, \
+    get_column_x_bounds, idx_to_cords, get_text_within_bbox
 from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
     find_pdf_utils_columns, map_columns_force, get_regions, is_region, \
     is_candidate_winner, extract_region_locality_text, get_row_content_at_idx, \
@@ -237,7 +238,6 @@ class Worker:
                 "cords":      {},
                 "stage":      {},
                 "candidates": [],
-                "winner": None
             }
 
             page_index         = -1
@@ -435,7 +435,6 @@ class Worker:
                                 "cords": {},
                                 "stage": {"region": None},
                                 "candidates": [],
-                                "winner": None
                             }
                             last_region = None
 
@@ -451,7 +450,6 @@ class Worker:
                                 "cords": {},
                                 "stage": {"region": last_region},
                                 "candidates": [],
-                                "winner": None
                             }
                         # ── Skip : aucun contexte actif du tout ──
                         # Lignes de total global en tout début de tableau, avant
@@ -491,7 +489,6 @@ class Worker:
                                         "cords":      {},
                                         "stage":      {"region": rr},
                                         "candidates": [],
-                                        "winner":     None
                                     }
                                 else:
                                     if last_region != rr:
@@ -578,7 +575,6 @@ class Worker:
                                         "cords":      {page_index: []},
                                         "stage":      {"region": last_region},
                                         "candidates": [],
-                                        "winner":     None
                                     }
                                 else:
                                     last_locality["value"] += " " + locality_raw
@@ -639,9 +635,6 @@ class Worker:
                                         row_content, status_idx
                                     )
                                 )
-                                if cand["winner"]:
-                                    last_locality["winner"] = cand
-
                         else:
                             # Plusieurs candidats par ligne (format colonne)
                             for c in candidate_results_idx:
@@ -660,7 +653,8 @@ class Worker:
 
                     if table_data:
                         # voir sl'il ya des donnee residuel [EDAN page 20 example]
-                        last_row_bottom = table.rows[-1].bbox[3]
+                        last_rows_bbox = table.rows[-1].bbox
+                        last_row_bottom = last_rows_bbox[3]
                         table_bottom = table.bbox[3]
 
                         if table_bottom - last_row_bottom > 5:
@@ -688,19 +682,11 @@ class Worker:
                                     continue
                                 col_x0, col_x1 = bounds
                                 cell = (col_x0, crop_top, col_x1, table_bottom)
-                                if idx in locality_idx + region_idx and False:
-                                    text = await _to_async(
-                                        extract_region_locality_text,
-                                        page, cell
-                                    )
-                                else:
-                                    crop_ = await _to_async(
-                                        page.within_bbox,cell
-                                    )
-                                    text = await _to_async(
-                                        crop_.extract_text
-                                    )
-                                    text = (text or "").replace("\n", " ").strip()
+                                # _get_text_within_bbox
+                                text = await _to_async(
+                                    extract_region_locality_text,
+                                    page, cell
+                                )
 
                                 residual_row.append(text if text else None)
 
@@ -739,7 +725,6 @@ class Worker:
                                             "cords": {},
                                             "stage": {"region": rr},
                                             "candidates": [],
-                                            "winner": None
                                         }
                                     else:
                                         if last_region != rr:
@@ -794,7 +779,6 @@ class Worker:
                                         "cords": {page_index: []},
                                         "stage": {"region": last_region},
                                         "candidates": [],
-                                        "winner": None
                                     }
 
                             for k, i in idxs.items():
@@ -825,54 +809,70 @@ class Worker:
 
                                 pty_idx = candidate_results_idx.get(
                                     "party_idx")
-                                if pty_idx is not None and pty_idx != -1:
-                                    cand[
-                                        "party_ticker"] = get_row_content_at_idx(
-                                        residual_row, pty_idx
-                                    )
+                                party_ticker = await _to_async(
+                                    get_text_within_bbox,
+                                    page, pty_idx, col_x_bounds, last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tparty_ticker==", party_ticker, repr(party_ticker))
+                                if party_ticker:
+                                    cand["party_ticker"] = party_ticker
 
                                 name_idx = candidate_results_idx.get(
                                     "candidate_name_idx")
-                                if name_idx is not None and name_idx != -1:
-                                    cand["full_name"] = get_row_content_at_idx(
-                                        residual_row, name_idx
-                                    )
+                                full_name = await _to_async(
+                                    get_text_within_bbox,
+                                    page, name_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tfull_name==", full_name, repr(full_name))
+                                if full_name:
+                                    cand["full_name"] = full_name
 
                                 score_idx = candidate_results_idx.get(
                                     "score_idx")
-                                if score_idx is not None and score_idx != -1:
-                                    cand["raw_value"] = get_row_content_at_idx(
-                                        residual_row, score_idx
-                                    )
+                                raw_value = await _to_async(
+                                    get_text_within_bbox,
+                                    page, score_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\traw_value==", raw_value, repr(raw_value))
+
+                                if raw_value:
+                                    cand["raw_value"] = raw_value
 
                                 cand["bbox_json"] = [{page_index: row_residual_box_single}]
-                                print("\t\tajout du candidat:", str(cand)[:30])
-                                last_locality["candidates"].append(cand)
+
                                 status_idx = candidate_results_idx.get(
                                     "status_idx")
-                                if status_idx not in (-1, None):
+                                status_value = await _to_async(
+                                    get_text_within_bbox,
+                                    page, status_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tstatus_value==", status_value, repr(status_value))
+                                if status_value:
                                     cand["winner"] = is_candidate_winner(
-                                        get_row_content_at_idx(
-                                            residual_row, status_idx
-                                        )
+                                        status_value
                                     )
-                                    if cand["winner"]:
-                                        last_locality["winner"] = cand
+                                print("\t\tajout du candidat:", str(cand)[:30])
+                                last_locality["candidates"].append(cand)
 
                             else:
                                 # Plusieurs candidats par ligne (format colonne)
                                 for c in candidate_results_idx:
+                                    raw_value = await _to_async(
+                                        get_text_within_bbox,
+                                        page, c["score_idx"], col_x_bounds,
+                                        last_row_bottom, table.bbox[3]
+                                    )
                                     cand = {
                                         "full_name": c["candidate_name"],
-                                        "raw_value": get_row_content_at_idx(
-                                            residual_row, c["score_idx"]
-                                        ),
+                                        "raw_value": raw_value,
                                         "bbox_json": [{page_index: row_residual_box_single}]
                                     }
                                     if "party_ticker" in c:
                                         cand["party_ticker"] = c["party_ticker"]
-                                    print("\t\tajout du candidat:",
-                                          str(cand)[:30])
+                                    print("\t\tajout du candidat:", str(cand)[:30])
 
                                     last_locality["candidates"].append(cand)
 

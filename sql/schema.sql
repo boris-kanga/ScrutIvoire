@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users  (
 CREATE TABLE IF NOT EXISTS elections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
-    type VARCHAR(50),
+    type VARCHAR(50),  -- "legislative | presidential | municipal | referendum"
     status VARCHAR(20) DEFAULT 'DRAFT' CHECK (status IN ('OPEN', 'ARCHIVED', 'DRAFT'))
 );
 
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS source_documents (
 CREATE TABLE IF NOT EXISTS candidates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
-    full_name VARCHAR(150),
-    party_ticker VARCHAR(20),
+    full_name TEXT,
+    party_ticker TEXT,
     color_code VARCHAR(7)
 );
 
@@ -87,8 +87,6 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
     unregistered_voters_count integer,
 
-    winner TEXT,
-
     bbox_json TEXT, -- [x0, top, x1, bottom, page]
 
     validated_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Validateur qui a approuvé
@@ -105,9 +103,9 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 CREATE TABLE IF NOT EXISTS candidate_results_staging (
     id SERIAL PRIMARY KEY,
     locality_id INTEGER NOT NULL REFERENCES locality_results_staging(id) ON DELETE CASCADE,
-
-    full_name VARCHAR(150),
-    party_ticker VARCHAR(20),
+    is_independent BOOLEAN,
+    full_name TEXT,
+    party_ticker TEXT,
     raw_value INTEGER,
 
     bbox_json TEXT,
@@ -117,6 +115,14 @@ CREATE TABLE IF NOT EXISTS candidate_results_staging (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     validated_at TIMESTAMP
+);
+
+
+
+
+CREATE TABLE IF NOT EXISTS locality_winner(
+    id SERIAL PRIMARY KEY,
+    candidate_id INTEGER NOT NULL REFERENCES candidate_results_staging(id) ON DELETE CASCADE
 );
 
 -- 6. TRANSACTIONAL (VOTE EN DIRECT)
