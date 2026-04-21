@@ -1,13 +1,17 @@
 import contextlib
+import json
 import re
 import uuid
 from functools import partial
 from typing import Optional
 
 import aiofiles
+from kb_tools.tools import remove_accent_from_text
+
+from thefuzz import process, fuzz
 
 from src.domain.election import Election, Document, DocumentType, \
-    LocalityStagingResult, CandidateStagingResult
+    LocalityStagingResult, int_parser
 from src.infrastructure.database.redisdb import RedisDB
 from src.infrastructure.file_storage import FileStorageProtocol
 from src.infrastructure.message_broker.redis_message_broker import \
@@ -18,6 +22,7 @@ from src.domain.message_broker import MessageBrokerChannel
 
 from io import BytesIO, IOBase
 
+from src.utils.tools import value_parser
 
 REPORT_FILE_NAME = "rapport.pdf"
 
@@ -29,6 +34,18 @@ class ElectionService:
         self._mr = RedisMessageBroker(self.rd)
 
         self.storage = storage
+
+        self._commune_reg = re.compile(r"\bc\s*o\s*m\s*m\s*u\s*n\s*e\s*s?\b", flags=re.I)
+        self._sp_reg = re.compile(r"\b(s\s*|s\s*o\s*u\s*s\s*)[\\/\.\-\s]*(p|p\s*r\s*[eèéė]\s*f\s*(?:\.|e\s*c\s*t\s*u\s*r\s*e\s*s?)?)\b", flags=re.I)
+
+        self._fuzz_threshold = {
+            "commune": 70,
+            "sous_prefecture": 70,
+            "zone": 80,
+            "region": 80,
+            "candidate": 70,
+            "party": 70
+        }
 
     async def get_all(self):
         els = await self.repo.get_all_elections()
@@ -67,50 +84,273 @@ class ElectionService:
         party_ticker.append(["INDEPENDANT", independent])
         return party_ticker
 
+    def extraction_ref_entities(self, value, type_="locality"):
+        refs = []
+        canonic_name = remove_accent_from_text(
+            (" ".join(value.split())).upper())
+        if type_ == "locality":
+            canonic_name = re.sub(r"\d\(\)\.", "", canonic_name)
+            parts = re.split(r"(?:,|\be\s*t\b)", canonic_name, flags=re.I)
+
+            current = []
+            got_commune = False
+            got_sp = False
+            for i, part in enumerate(parts):
+                part = part.strip()
+                if not part:
+                    continue
+                _com = self._commune_reg.search(part)
+                _sp = self._sp_reg.search(part)
+
+                if got_commune:
+                    if not _sp:
+                        current = []
+                    got_commune = False
+
+                if got_sp:
+                    if not _com:
+                        current = []
+                    got_sp = False
+
+                if _com:
+                    s, e = _com.span()
+                    before = part[:s].strip()
+                    end = part[e:].strip()
+                    if end.startswith("."):
+                        end = end[1:]
+                    if before:
+                        current.append(before)
+                    refs.extend([
+                        {
+                            "type": "COMMUNE",
+                            "raw_name": x,
+                            "canonic_name": x
+                        }
+                        for x in current
+                    ])
+                    if end:
+                        current.append(end)
+                        current = []
+                    else:
+                        if i == len(parts) - 1:
+                            current = []
+                        got_commune = True
+                    continue
+
+                if _sp:
+                    s, e = _sp.span()
+                    before = part[:s].strip()
+                    end = part[e:].strip()
+                    if end.startswith("."):
+                        end = end[1:]
+                    if before:
+                        current.append(before)
+                    refs.extend([
+                        {
+                            "type": "SOUS_PREFECTURE",
+                            "raw_name": x,
+                            "canonic_name": x
+                        }
+                        for x in current
+                    ])
+                    if end:
+                        current.append(end)
+                        current = []
+                    else:
+                        if i == len(parts) - 1:
+                            current = []
+                        got_sp = True
+
+                    continue
+
+                current.append(part)
+            if current and not got_commune and not got_sp:
+                refs.extend([
+                    {
+                        "type": "ZONE",
+                        "raw_name": x,
+                        "canonic_name": x
+                    }
+                    for x in current
+                ])
+        else:
+            refs.extend([
+                {
+                    "type": type_.upper(),
+                    "raw_name": value,
+                    "canonic_name": canonic_name
+                }
+            ])
+
+        return refs
+
+    @staticmethod
+    def text_as_canonic(text):
+        return remove_accent_from_text((" ".join(text.split())).upper())
+
     async def add_extracted_archive_data(self, extracted_locality, election):
+        ref_entities = []
+
         locality_staging = []
         candidate_staging = []
+        circonscriptions = []
+        candidates_raw = []
+
+        regions = {ll["stage"]["region"] for ll in extracted_locality}
+        regions = [
+            {"election_id": election.id, "original_raw_name": r}
+            for r in regions
+        ]
+        regions = {
+            r["original_raw_name"]: i
+            for r, i in zip(
+                regions,
+                await self.repo.insert_archived_staging_data(regions=regions)
+            )
+        }
+        ref_entities += [
+            {
+                "election_id": election.id,
+                "region_id": i,
+                "canonic_name": self.text_as_canonic(raw),
+                "raw_name": raw,
+                "type": "REGION"
+
+            }
+            for raw, i in regions.items()
+        ]
+
+        political_parties = {
+            c.get("party_ticker")
+            for ll in extracted_locality
+            for c in ll["candidates"]
+            if c.get("party_ticker")
+        }
+        political_parties = [
+            {"election_id": election.id, "original_raw_name": p}
+            for p in political_parties
+        ]
+
+        political_parties = {
+            r["original_raw_name"]: i
+            for r, i in zip(
+                political_parties,
+                await self.repo.insert_archived_staging_data(political_parties=political_parties)
+            )
+        }
+        ref_entities += [
+            {
+                "election_id": election.id,
+                "party_id": i,
+                "canonic_name": self.text_as_canonic(raw),
+                "raw_name": raw,
+                "type": "PARTY"
+
+            }
+            for raw, i in political_parties.items()
+        ]
+
+
+        # massive insert circonscriptions
         for locality in extracted_locality:
             # winner - value - cords - candidates
+            circonscriptions.append({
+                "election_id": election.id,
+                "region_id": regions[locality["stage"].pop("region")],
+                "original_raw_name": locality["value"].replace("\n", " "),
+                "source_id": election.doc.id,
+                "bbox_json": json.dumps(locality["cords"]),
+            })
+
+        c_ids = await self.repo.insert_archived_staging_data(
+            circonscriptions=circonscriptions
+        )
+
+        for i, locality in enumerate(extracted_locality):
+            # winner - value - cords - candidates
+            cc = circonscriptions[i]
+            refs = self.extraction_ref_entities(cc["original_raw_name"], type_="locality")
+            ref_entities += [
+                {
+                    "circonscription_id": c_ids[i],
+                    "election_id": election.id,
+                    **r
+                }
+                for r in refs
+            ]
+
             staging = LocalityStagingResult(
                 **locality["stage"],
-                locality=locality["value"],
                 election_id=election.id,
-                source_id=election.doc.id,
-                bbox_json=locality["cords"],
+                circonscription_id=c_ids[i],
             )
 
             locality_staging.append(staging)
-        ids = await self.repo.insert_archived_staging_data(
+        await self.repo.insert_archived_staging_data(
             localities=locality_staging
         )
-        reg = re.compile(r"\bi+n+d+\wp+e+n+", flags=re.IGNORECASE)
+        # state insert candidates
+        reg = re.compile(r"\bi+n+d+(?:[eé]+p+[ea]+n+t+e*)?\b", flags=re.IGNORECASE)
         for i, locality in enumerate(extracted_locality):
             for c in locality["candidates"]:
-                c = CandidateStagingResult(
-                    locality_id=ids[i],
-                    full_name=c["full_name"],
-                    raw_value=c["raw_value"],
-                    bbox_json=c["bbox_json"],
-                    party_ticker=c["party_ticker"],
-                    winner=c.get("winner"),
-                    is_independent=(
-                        None if not c["party_ticker"] else
-                        reg.search(c["party_ticker"]) is not None
+                is_ind = (
+                    None if not c["party_ticker"] else
+                    reg.search(c["party_ticker"]) is not None
+                )
+                cand = {
+                    "election_id": election.id,
+                    "original_raw_name": c["full_name"],
+                    "bbox_json": json.dumps(c["bbox_json"]),
+                    "is_independent": is_ind,
+                    "source_id": election.doc.id
+                }
+                if is_ind is False:
+                    cand["party_id"] = political_parties.get(c.get("party_ticker"))
+
+                if election.is_national:
+                    pass
+                else:
+                    cand["circonscription_id"] = c_ids[i]
+                candidates_raw.append(cand)
+
+                candidate_staging.append(
+                    dict(
+                        circonscription_id = c_ids[i],
+                        raw_value=value_parser(int_parser, c["raw_value"], 0),
+                        winner=c.get("winner")
                     )
                 )
-                candidate_staging.append(c)
-        ids = await self.repo.insert_archived_staging_data(
-            candidates=candidate_staging
+
+        candidate_ids = await self.repo.insert_archived_staging_data(
+            candidates_raw=candidates_raw
         )
-        winners = []
-        for i, c in enumerate(candidate_staging):
-            if c.winner:
-                winners.append({
-                    "candidate_id": ids[i]
-                })
+        candidate_staging = [
+            {
+                **c,
+                "candidate_id": candidate_ids[i],
+                "election_id": election.id
+            }
+            for i, c in enumerate(candidate_staging)
+        ]
         await self.repo.insert_archived_staging_data(
-            locality_winners=winners
+            candidates_staging=candidate_staging
+        )
+
+        ref_entities += [
+            {
+                "election_id": election.id,
+                "candidate_id": c["candidate_id"],
+                "type": "CANDIDATE",
+                "canonic_name": self.text_as_canonic(candidates_raw[i]["original_raw_name"]),
+                "raw_name": candidates_raw[i]["original_raw_name"]
+            }
+            for i, c in enumerate(candidate_staging)
+        ]
+
+        # alimentation de ref_entities
+        # ref_entities
+        await self.repo.insert_archived_staging_data(
+            ref_entities=ref_entities
         )
 
 
@@ -152,6 +392,9 @@ class ElectionService:
             doc.get = partial(_)
 
             election.doc = doc
+            election.delete = partial(self.repo.delete_election, election.id)
+
+            election.update = partial(self.repo.update_election, election)
         return election
 
     async def delete_archive(self, election_id):
@@ -164,12 +407,12 @@ class ElectionService:
             archive_hash,
             file: BytesIO,
             uploaded_by:Optional[uuid.UUID],
-            sid,
+            room_id,
             /, filename=None
     ):
         if not filename:
             filename = str(file.name)
-        # TODO: case pdf
+        # TODO: case xlsx file
         doc = Document(
             election_id=election.id,
             file_name=filename,
@@ -186,12 +429,39 @@ class ElectionService:
             doc.storage_url
         )
 
-        print("pulication")
         await self._mr.publish(
             MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT,
             {
-                "sid": sid,
+                "room": room_id,
                 "election_id": str(election.id)
             }
         )
-        print("ok")
+
+    async def entity_resolution(self, entity: str, category: str, election_id: str):
+        category = category.upper()
+        if category == "ZONE":
+            category = ['COMMUNE', 'SOUS_PREFECTURE', 'ZONE', "REGION"]
+        choices_from_db = await self.repo.get_entity_by_category(
+            category, election_id
+        )
+        choices_from_db = {c["canonic_name"]: c for c in choices_from_db}
+        keys = list(choices_from_db.keys())
+        m, proba = process.extractOne(entity, keys, scorer=fuzz.token_sort_ratio)
+
+        if proba > self._fuzz_threshold.get(category.lower(), 90):
+            return choices_from_db[m]
+        return {}
+
+    async def ask_llm(self, question, archive_id, room_id):
+        await self._mr.publish(
+            MessageBrokerChannel.CHAT,
+            {
+                "room": room_id,
+                "election_id": archive_id,
+                "question": question
+
+            }
+        )
+        async for m in self._mr.subscribe(room_id, timeout=60):
+            break
+

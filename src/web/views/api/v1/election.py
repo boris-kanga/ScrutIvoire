@@ -3,7 +3,7 @@ import traceback
 import uuid
 from datetime import timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from flask_jwt_extended import get_jwt_identity, jwt_required, \
     verify_jwt_in_request
@@ -56,10 +56,9 @@ async def archive_from_file(storage: FileStorageProtocol, db: PgDB, rd: RedisDB)
         filename = secure_filename(archive.filename)
 
         _hash = request.form["hash"]
-        sid = request.form["socket_id"]
 
         await service.start_archiving_process(
-            election, _hash, archive.stream, user, sid,
+            election, _hash, archive.stream, user, session["user_room"],
             filename=filename
         )
     except Exception:

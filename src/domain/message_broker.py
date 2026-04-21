@@ -15,3 +15,5 @@ class MessageBrokerChannel:
 
     PROCESSING_ELECTION_RAPPORT = "election:persistante:rapport_processing"
 
+    CHAT = "chat"
+

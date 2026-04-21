@@ -5,9 +5,12 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
-from typing import Callable, Awaitable, Optional, AsyncGenerator, List
+from typing import Callable, Awaitable, Optional, AsyncGenerator, Literal
 
 from src.utils.tools import value_parser
+
+
+ELECTION_TYPE = Literal["legislative", "presidential", "municipal", "regional"]
 
 
 @dataclass
@@ -22,6 +25,19 @@ class Election:
     update: Callable[[], Awaitable[None]] = field(init=False)
 
     doc: "Document"                       = field(init=False)
+
+    @property
+    def is_national(self):
+        return self.type in ("presidential",)
+
+    def set(self, *, type_: str=None, name: str=None):
+        self.type = type_ or self.type
+        self.name = name or self.name
+        if self.name:
+            part = re.split(r"l?'?\b[eé]lection", self.name, flags=re.I)[0].strip()
+            year = re.search(r"\d{4}", self.name)
+            if year:
+                self.name = part + " " + year.group()
 
     def to_dict(self) -> dict:
         d = {
@@ -100,68 +116,15 @@ def percent_parser(value):
     return value / 100
 
 
-
-@dataclass
-class CandidateStagingResult:
-    locality_id: int
-
-    full_name: str
-    raw_value: int
-
-    bbox_json: dict
-
-    is_independent: Optional[bool]
-
-    party_ticker: str = None
-
-    winner: Optional[bool] = None
-
-    validated_by: Optional[uuid.UUID] = None
-
-    validation_status: str = "PENDING"
-
-    validated_at: Optional[datetime] = None
-
-    created_at: datetime = field(init=False)
-    id: int = field(init=False)
-
-    def __post_init__(self):
-        assert self.full_name
-        self.raw_value = value_parser(int_parser, self.raw_value, 0)
-
-    def to_dict(self, bbox_json_as_text=False, not_winner=True):
-        d = {}
-        for k in self.__annotations__:
-            if k not in ("id", "created_at", "winner"):
-                v = getattr(self, k)
-                if v is not None:
-                    d[k] = v
-        if getattr(self, "id", None) is not None:
-            d["id"] = self.id
-
-        if not not_winner:
-            d["winner"] = self.winner
-
-        if getattr(self, "created_at", None) is not None:
-            d["created_at"] = self.created_at
-        if bbox_json_as_text:
-            d["bbox_json"] = json.dumps(self.bbox_json)
-        return d
-
-
 @dataclass
 class LocalityStagingResult:
-    region: str
-    locality: str
     election_id: uuid.UUID
 
-    source_id: uuid.UUID
+    circonscription_id: int
 
     registered_voters_total: int
     voters_total: int
     expressed_votes: int
-
-    bbox_json: dict
 
     # candidates: List[CandidateStagingResult] = field(init=False)
 
@@ -198,7 +161,7 @@ class LocalityStagingResult:
     id: int = field(init=False)
 
     def __post_init__(self):
-        assert self.locality and self.region
+        assert self.circonscription_id
 
         self.registered_voters_total = value_parser(int_parser, self.registered_voters_total)
         self.voters_total = value_parser(int_parser, self.voters_total)
@@ -228,7 +191,7 @@ class LocalityStagingResult:
 
         self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
 
-    def to_dict(self, bbox_json_as_text=False):
+    def to_dict(self):
         d = {}
         for k in self.__annotations__:
             if k not in ("id", "created_at"):
@@ -240,8 +203,6 @@ class LocalityStagingResult:
 
         if getattr(self, "created_at", None) is not None:
             d["created_at"] = self.created_at
-        if bbox_json_as_text:
-            d["bbox_json"] = json.dumps(self.bbox_json)
         return d
 
 

@@ -1,10 +1,12 @@
+import json
 import uuid
+from datetime import datetime
 from typing import List
 
 from kb_tools.tools import get_buffer
 
 from src.domain.election import Election, Document, DocumentType, \
-    LocalityStagingResult, CandidateStagingResult
+    LocalityStagingResult
 from src.infrastructure.database.pgdb import PgDB
 
 from functools import partial
@@ -67,28 +69,40 @@ class ElectionRepo:
                 continue
             res += await self.db.run_query(
                 f"""
-                WITH winner AS (
-                    SELECT 
-                        locality_id,
-                        count(*) as winner_count
-                    FROM locality_winner w INNER JOIN
-                        candidate_results_staging c
-                        ON c.id = w.candidate_id
-                    GROUP BY locality_id
-                )
+                WITH zone AS (
+                        SELECT 
+                         id as c_id
+                        FROM circonscriptions
+                        WHERE election_id IN (
+                                {",".join("$%s"%(i+1) for i in range(len(b)))}
+                            )
+                    ),
+                    locality_res AS (
+                        SELECT 
+                            *
+                        FROM locality_results_staging l INNER JOIN zone
+                            ON l.circonscription_id=c_id
+                    ),
+                    seat AS (
+                        SELECT 
+                            c_id,
+                            SUM(CASE WHEN winner THEN 1 ELSE 0 END) as seat_count
+                        FROM candidate_results_staging c INNER JOIN zone
+                            on c.circonscription_id=c_id
+                        GROUP BY c_id
+                    )
                 SELECT 
-                    election_id,
+                    l.election_id,
                     sum(voters_total) AS voters_total,
                     sum(expressed_votes) AS expressed_votes,
                     sum(pop_size) AS pop_size,
                     SUM(registered_voters_total) AS registered_voters_total,
-                    SUM(winner_count) AS nb_seat
-                FROM locality_results_staging l LEFT JOIN winner
-                    ON l.id = winner.locality_id
-                WHERE election_id IN (
-                {",".join("$%s"%(i+1) for i in range(len(b)))}
-                )
-                GROUP BY election_id
+                    SUM(seat_count) AS nb_seat
+                    
+                FROM locality_res l LEFT JOIN seat
+                    ON l.c_id = seat.c_id
+                
+                GROUP BY l.election_id
                 """, params=tuple(b)
             )
         return res
@@ -105,31 +119,39 @@ class ElectionRepo:
         return await self.db.run_query(
             """
             SELECT 
-                id, 
-                locality,
+                l.id, 
+                c.original_raw_name AS locality,
                 participation_rate
-            FROM locality_results_staging
-            WHERE election_id = $1
+            FROM locality_results_staging l INNER JOIN circonscriptions c
+                ON l.circonscription_id = c.id
+            WHERE c.election_id = $1
             """, params=(election_id,)
         )
 
     async def election_winner(self, election_id):
+        # SELECT crs.raw_value FROM candidate_results_staging crs JOIN candidates c ON crs.candidate_id = c.id WHERE c.party_id = 63 AND c.election_id = '0a17a7d8-e39c-428d-aae5-1d0ebd42ba25' AND c.is_independent = False
         return await self.db.run_query(
             """
+            WITH cand AS (
+                SELECT 
+                    c.id                AS candidate_id,
+                    p.original_raw_name AS party_ticker,
+                    c.original_raw_name AS full_name,
+                    c.election_id,
+                    is_independent
+                FROM candidates c LEFT JOIN political_parties p
+                    ON c.party_id = p.id
+            )
             SELECT
-                party_ticker, 
-                full_name,
-                l.id AS locality_id,
-                locality, 
-                region,
-                is_independent
+                w.circonscription_id,
+                cand.party_ticker, 
+                cand.full_name,
+                cand.is_independent
             FROM 
-                locality_results_staging l INNER JOIN 
-                candidate_results_staging c
-                    ON l.id = c.locality_id
-                INNER JOIN locality_winner w
-                    ON w.candidate_id = c.id
-            WHERE election_id = $1
+                cand INNER JOIN
+                candidate_results_staging w
+                    ON cand.candidate_id = w.candidate_id
+            WHERE cand.election_id = $1 AND winner
             """, params=(election_id,)
         )
 
@@ -192,27 +214,119 @@ class ElectionRepo:
         return election
 
     async def insert_archived_staging_data(
-            self, *, localities: List[LocalityStagingResult]=None,
-            candidates: List[CandidateStagingResult]=None,
-            locality_winners=None
+            self, *,
+            regions=None,
+            political_parties=None,
+            circonscriptions=None,
+            candidates_raw=None,
+
+            localities: List[LocalityStagingResult]=None,
+            candidates_staging=None,
+            ref_entities=None
     ):
         res = None
-        if localities:
+        if regions:
             res = await self.db.insert_many(
-                [s.to_dict(bbox_json_as_text=True) for s in localities],
+                regions,
+                "regions",
+                id_field="id"
+            )
+        elif political_parties:
+            res = await self.db.insert_many(
+                political_parties,
+                "political_parties",
+                id_field="id"
+            )
+        elif circonscriptions:
+            res = await self.db.insert_many(
+                circonscriptions,
+                "circonscriptions",
+                id_field="id"
+            )
+        elif candidates_raw:
+            res = await self.db.insert_many(
+                candidates_raw,
+                "candidates",
+                id_field="id"
+            )
+        elif localities:
+            res = await self.db.insert_many(
+                [s.to_dict() for s in localities],
                 "locality_results_staging",
                 id_field="id"
             )
-        elif candidates:
+        elif candidates_staging:
             res = await self.db.insert_many(
-                [s.to_dict(bbox_json_as_text=True) for s in candidates],
+                candidates_staging,
                 "candidate_results_staging",
                 id_field="id"
             )
-        elif locality_winners:
+        elif ref_entities:
             res = await self.db.insert_many(
-                locality_winners,
-                "locality_winner",
+                ref_entities,
+                "ref_entities",
                 id_field="id"
             )
         return res
+
+    async def insert_question(self, dict_q):
+        return await self.db.insert(
+            dict_q, "chat_session", id_field="id"
+        )
+
+    async def update_question(
+            self,
+            question_id,
+            answer, answer_meta, status
+    ):
+        await self.db.run_query(
+            """
+            UPDATE chat_session
+                SET status = $1,
+                    answer=$2,
+                    answer_meta=$3,
+                    answer_time=$4
+                WHERE id=$5
+            """,
+            params=(
+                status, answer, json.dumps(answer_meta), datetime.now(),
+                question_id
+            )
+        )
+
+
+    async def get_entity_by_category(self, category, election_id):
+        if not isinstance(category, list):
+            category = [category]
+        category = list(set(category))
+        res = await self.db.run_query(
+            f"""
+            SELECT * FROM ref_entities
+            WHERE type IN (
+                {','.join(f'${i+2}' for i,_ in enumerate(category))}
+            ) AND election_id=$1
+            """, params=(election_id, *category)
+        )
+        result = []
+        for r in res:
+            if r["type"] in ("COMMUNE", "SOUS_PREFECTURE", "ZONE"):
+                result.append({
+                    "canonic_name": r["canonic_name"],
+                    "id": r["circonscription_id"]
+                })
+            elif r["type"] == "REGION":
+                result.append({
+                    "canonic_name": r["canonic_name"],
+                    "id": r["region_id"]
+                })
+            elif r["type"] == "CANDIDATE":
+                result.append({
+                    "canonic_name": r["canonic_name"],
+                    "id": r["candidate_id"]
+                })
+            elif r["type"] == "PARTY":
+                result.append({
+                    "canonic_name": r["canonic_name"],
+                    "id": r["party_id"]
+                })
+        return result

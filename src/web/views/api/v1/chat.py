@@ -1,7 +1,7 @@
 import traceback
 from datetime import timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from flask_jwt_extended import create_access_token, set_access_cookies
 
@@ -16,11 +16,18 @@ from src.web import db_depends
 view = Blueprint('chat', __name__, url_prefix="/chat")
 
 
-@view.get('/')
+@view.post('/<archive_id>')
 @db_depends
-async def ask(db: PgDB, rd, storage):
-    raise NotImplementedError()
-
+async def ask(db: PgDB, rd, storage, archive_id):
+    question = request.json["question"]
+    print(question)
+    service = ElectionService(
+        ElectionRepo(db), rd, storage
+    )
+    await service.ask_llm(
+        question, archive_id, session["user_room"]
+    )
+    return jsonify({"ok": True})
 
 
 @view.get('/base-stat/<archive_id>')
@@ -31,7 +38,7 @@ async def stat_indiv(db: PgDB, rd, storage, archive_id):
     )
     election = await service.get(archive_id)
     charts = []
-    if election.type in ("legislative", ""):
+    if (election.type or "") in ("legislative", ""):
         top_5_locality = await service.top_n_locality(
             election
         )

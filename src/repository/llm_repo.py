@@ -30,11 +30,40 @@ class LLMRepo:
 
     def get_prompt(
             self,
-            task_type, *,
+            *,
+            j2_file=None,
+            role="user",
+            task_type=None,
             system_arg: dict=None,
-            user_arg: dict=None
+            user_arg: dict=None,
+            **kwargs
     )-> list[LLMMessage]:
         messages = {}
+        if j2_file is not None:
+            origin = j2_file
+            # j2_file like "category.filename" without ext
+            j2_file = j2_file.split(".")
+            j2_file[-1] += ".j2"
+            file = os.path.join(
+                self.prompt_folder, *j2_file
+            )
+            if not os.path.isfile(file):
+                if LLMRepo._PROMPTS_TMP.get(origin):
+                    txt = LLMRepo._PROMPTS_TMP[origin]
+                else:
+                    raise ValueError(origin +" prompt don't exists")
+            else:
+                txt = _read_file(file)
+            LLMRepo._PROMPTS_TMP[origin] = txt
+            return [
+                LLMMessage(
+                    role=role,
+                    content=_parse_template(
+                        txt, **kwargs
+                    )
+                )
+            ]
+
         for f in os.listdir(self.prompt_folder):
             try:
                 if task_type.lower() in f.lower():

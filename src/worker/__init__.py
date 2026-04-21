@@ -25,6 +25,7 @@ from src.repository.election_repo import ElectionRepo
 from src.repository.llm_repo import LLMRepo
 
 from src.services.election_service import ElectionService
+from src.services.llm_service import LLMService
 from src.worker.archive_utils import get_row_content_at_idx, _first_idx, \
     _consolidate_bbox, \
     get_column_x_bounds, idx_to_cords, get_text_within_bbox
@@ -40,7 +41,7 @@ class Worker:
             self,
             election_service=None,
             socket=None,
-            llm_repo=None,
+            llm_service=None,
             msg_broker=None
     ):
         if election_service is None:
@@ -58,12 +59,12 @@ class Worker:
                 'redis://{host}:{port}'.format(**REDIS_CONFIG)
             )
 
-        if llm_repo is None:
-            llm_repo = LLMRepo()
+        if llm_service is None:
+            llm_service = LLMService(election_service.entity_resolution)
 
         self.election_service = election_service
         self.socket           = socket
-        self.llm_repo         = llm_repo
+        self.llm_service         = llm_service
         self.mr               = msg_broker
         self._tasks: Dict[str, asyncio.Task] = {}
 
@@ -78,16 +79,34 @@ class Worker:
           - election_type            : 'legislative' ou autre
         En cas d'échec du LLM, tente un mapping forcé heuristique.
         """
-        messages = self.llm_repo.get_prompt(
-            "column_detector",
-            user_arg=dict(title=name, columns=columns),
-            system_arg=dict(title=name)
-        )
-        response = await self.llm_repo.run(
-            "column_detector",
-            messages, {}, timeout=60
+
+        response = await self.llm_service.detect_columns(
+            columns, name
         )
 
+        print("llm->", response)
+        print("columns:", columns)
+        fields = [
+            "region",
+            "locality",
+            "polling_stations_count",
+            "on_call_staff",
+            "pop_size_male",
+            "pop_size_female",
+            "pop_size",
+            "registered_voters_male",
+            "registered_voters_female",
+            "registered_voters_total",
+            "voters_male",
+            "voters_female",
+            "voters_total",
+            "participation_rate",
+            "null_ballots",
+            "expressed_votes",
+            "blank_ballots_count",
+            "blank_ballots_pct",
+            "unregistered_voters_count"
+        ]
         if not response["success"]:
             # Fallback heuristique si le LLM échoue
             rsp, candidate_results_format, candidate_results = map_columns_force(columns)
@@ -125,7 +144,7 @@ class Worker:
         try:
             real_res = {}
             for k, idx in rsp.items():
-                if k not in LocalityStagingResult.__annotations__:
+                if k not in fields:
                     continue
                 if idx in (-1, None):
                     continue
@@ -148,8 +167,8 @@ class Worker:
             "election_type":            result["election_metadata"]["type"]
         }
 
-    async def _processing_archive_task(self, sid, election_id):
-        print("debut du processing de election id", sid, election_id)
+    async def _processing_archive_task(self, room, election_id):
+        print("debut du processing de election id", room, election_id)
         election = await self.election_service.get(election_id)
         if not election:
             print(election, "election pas trouver")
@@ -262,7 +281,7 @@ class Worker:
                         await self.socket.emit(
                             "election_processing",
                             {"election_name": name},
-                            to=sid
+                            room=room
                         )
 
                 # ── Identifier les colonnes (une seule fois, sur la première
@@ -902,12 +921,16 @@ class Worker:
                             "a l'etape identification des colonnes"
                         ),
                     },
-                    to=sid
+                    room=room
                 )
             else:
                 # Traitement final des localités extraites
                 with open("tmp.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(extracted_locality))
+
+                election.set(type_=columns_meta.get("election_type"), name=name)
+                await election.update()
+
                 await self.election_service.add_extracted_archive_data(
                     extracted_locality, election
                 )
@@ -918,12 +941,12 @@ class Worker:
             MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT
         ):
 
-            print("on vient de recevoir un messqge")
+            print("on vient de recevoir un message")
             data        = message["data"]
-            sid         = data["sid"]
+            room         = data["room"]
             election_id = data["election_id"]
             task = asyncio.create_task(
-                    self._processing_archive_task(sid, election_id)
+                    self._processing_archive_task(room, election_id)
                 )
             _id = uuid.uuid4()
             self._tasks[str(_id)] = task
@@ -941,8 +964,73 @@ class Worker:
         finally:
             self._tasks.pop(str(_id), None)
 
+
+    async def _chat_process(self, election_id, question, room):
+        question_id = await self.election_service.repo.insert_question(
+            {
+                "session_id": room,
+                "question": question,
+            }
+        )
+
+        await self.mr.publish(room, {"question_id": question_id})
+
+        async def _callback(resp, message_accumulator):
+            answer_meta = {
+                "messages": [m.to_dict() for m in message_accumulator],
+                "meta": None
+            }
+            answer = None
+            status = ("DONE" if resp["success"] else "FAIL")\
+                if not resp["tool_calls"] else "PENDING"
+            if status == "DONE":
+                answer = resp["result"]
+                if not isinstance(answer, str):
+                    answer = json.dumps(answer)
+            await self.election_service.repo.update_question(
+                question_id=question_id,
+                answer=None if status != "DONE" else answer,
+                answer_meta=answer_meta,
+                status=status
+            )
+            print(room,  f"quiz({question_id})-->on vient une reponse LLM")
+
+        res = await self.llm_service.answer(
+            election_id=election_id,
+            question=question,
+            session_id=room,
+            callback=_callback
+        )
+        await self.socket.emit(
+            "chat_response",
+            res or {"ok": False, "error": "Un problème est survenu..."},
+            room=room
+        )
+
+    async def chat(self):
+        async for message in self.mr.subscribe(
+            MessageBrokerChannel.CHAT
+        ):
+
+            print("on vient de recevoir un messqge de chat")
+            data        = message["data"]
+            room         = data["room"]
+            election_id = data["election_id"]
+            question = data["question"]
+
+            task = asyncio.create_task(
+                self._chat_process(election_id, question, room)
+                )
+            _id = uuid.uuid4()
+            self._tasks[str(_id)] = task
+            print("la tache est tague avec id=", _id)
+
+            task.add_done_callback(partial(self.task_callback, _id=_id))
+            await asyncio.sleep(0)
+
     async def run(self):
         print("Start process")
         await asyncio.gather(
             self.archive_processing(),
+            self.chat()
         )

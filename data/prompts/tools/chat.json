@@ -1,0 +1,66 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "fuzzy_wuzzy",
+      "description": "Indispensable pour normaliser les noms de lieux, candidats ou partis. À utiliser AVANT de générer une requête SQL. Retourne l'ID exact de l'entité.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Le nom extrait de la question (ex: 'abidjan', 'rhdp')"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["COMMUNE", "SOUS_PREFECTURE", "REGION", "CANDIDATE", "PARTY", "ZONE"],
+            "description": "La catégorie de recherche. Utilise 'ZONE' par défaut pour les lieux sans précision."
+          }
+        },
+        "required": ["entity", "category"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "execute_sql_query",
+      "description": "Exécute une requête SQL SELECT sur la base de données PostgreSQL pour obtenir des statistiques électorales.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "La requête SQL complète à exécuter (Lecture seule uniquement)."
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_table_evidence",
+      "description": "Récupère les preuves visuelles. Fournir soit circonscription_id, soit candidate_id (pas les deux).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "election_id": {
+            "type": "string",
+            "description": "L'ID de l'élection en cours (UUID)."
+          },
+          "circonscription_id": {
+            "type": "integer",
+            "description": "L'ID numérique de la circonscription. Fournir soit ce champ soit candidate_id."
+          },
+          "candidate_id": {
+            "type": "integer",
+            "description": "L'ID numérique du candidat. Fournir soit ce champ soit circonscription_id."
+          }
+        },
+        "required": ["election_id"]
+      }
+    }
+  }
+]

@@ -51,15 +51,19 @@ class RedisMessageBroker(MessageBroker):
                                 return
                             res = await pubsub.get_message(
                                 timeout=(
-                                    None if _t == float("inf") else _t
+                                    0.01 if _t == float("inf") else _t
                                 )
                             )
-                            if res is None or _t <= 0:
+                            if res is not None:
+                                c = res["channel"]
+                                if isinstance(c, bytes):
+                                    c = c.decode()
+                                await queue.put({
+                                    "channel": c,
+                                    "data": res["data"]
+                                })
+                            if _t <= 0:
                                 return
-                            await queue.put({
-                                "channel": res["channel"].decode(),
-                                "data": res["data"]
-                            })
                     finally:
                         await pubsub.unsubscribe(*np_channels)
                         await pubsub.aclose()
@@ -115,6 +119,8 @@ class RedisMessageBroker(MessageBroker):
                             return
                     except asyncio.TimeoutError:
                         break
+            except StopIteration:
+                pass
             finally:
                 for t in tasks:
                     t.cancel()

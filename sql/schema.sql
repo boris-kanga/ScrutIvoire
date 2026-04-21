@@ -42,25 +42,79 @@ CREATE TABLE IF NOT EXISTS source_documents (
 );
 
 
-
-CREATE TABLE IF NOT EXISTS candidates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-
-    full_name TEXT,
-    party_ticker TEXT,
-    color_code VARCHAR(7)
+CREATE TABLE IF NOT EXISTS regions (
+    id SERIAL PRIMARY KEY,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+    original_raw_name VARCHAR(100) UNIQUE
 );
 
+
+CREATE TABLE IF NOT EXISTS circonscriptions(
+    id SERIAL PRIMARY KEY,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+    region_id INTEGER NOT NULL REFERENCES regions(id) ON DELETE CASCADE,
+    original_raw_name TEXT,
+    source_id UUID REFERENCES source_documents(id) ON DELETE CASCADE,
+    crop_url TEXT DEFAULT NULL,
+    bbox_json TEXT -- [x0, top, x1, bottom, page]
+
+);
+
+CREATE TABLE IF NOT EXISTS political_parties(
+    id SERIAL PRIMARY KEY,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+    original_raw_name TEXT
+);
+
+
+CREATE TABLE IF NOT EXISTS candidates (
+    id SERIAL PRIMARY KEY,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+    source_id UUID REFERENCES source_documents(id) ON DELETE CASCADE,
+    circonscription_id INTEGER DEFAULT NULL -- for presidential election
+                REFERENCES circonscriptions(id) ON DELETE CASCADE,
+    party_id INTEGER REFERENCES political_parties(id) ON DELETE CASCADE,
+    is_independent BOOLEAN DEFAULT NULL,
+
+    original_raw_name TEXT,
+    crop_url TEXT DEFAULT NULL,
+
+    bbox_json TEXT DEFAULT NULL -- for presidential election: [x0, top, x1, bottom, page]
+);
+
+
+CREATE TABLE IF NOT EXISTS ref_entities(
+    id SERIAL PRIMARY KEY,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+
+    -- Les cibles possibles du match
+    circonscription_id INTEGER DEFAULT NULL REFERENCES circonscriptions(id),
+    region_id          INTEGER DEFAULT NULL REFERENCES regions(id),
+    party_id           INTEGER DEFAULT NULL REFERENCES political_parties(id),
+    candidate_id       INTEGER DEFAULT NULL REFERENCES candidates(id),
+
+    canonic_name TEXT NOT NULL, -- La version "propre" (ex: "SUD-COMOÉ")
+    raw_name TEXT,              -- La version "PDF" (ex: "Sud-Comoe")
+
+    type VARCHAR(255) CHECK (
+        type IN (
+            'COMMUNE', 'SOUS_PREFECTURE', 'ZONE', -- Pour circonscription_id
+            'REGION',                             -- Pour region_id
+            'CANDIDATE',                          -- Pour candidate_id
+            'PARTY'                               -- Pour party_id
+        )
+    )
+);
 
 
 CREATE TABLE IF NOT EXISTS locality_results_staging(
     id SERIAL PRIMARY KEY,
-
-    region VARCHAR(100),
-    locality TEXT,
     election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
 
-    source_id UUID REFERENCES source_documents(id) ON DELETE CASCADE,
+    circonscription_id INTEGER NOT NULL REFERENCES circonscriptions(id) ON DELETE CASCADE,
+
+    --region VARCHAR(100),
+    --locality TEXT,
 
     polling_stations_count integer,
     on_call_staff integer,
@@ -87,28 +141,28 @@ CREATE TABLE IF NOT EXISTS locality_results_staging(
 
     unregistered_voters_count integer,
 
-    bbox_json TEXT, -- [x0, top, x1, bottom, page]
-
     validated_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Validateur qui a approuvé
     validation_status VARCHAR(20) DEFAULT 'PENDING',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     validated_at TIMESTAMP,
 
-    UNIQUE (election_id, region, locality)
+    UNIQUE (election_id, circonscription_id)
 
 );
 
 
 CREATE TABLE IF NOT EXISTS candidate_results_staging (
     id SERIAL PRIMARY KEY,
-    locality_id INTEGER NOT NULL REFERENCES locality_results_staging(id) ON DELETE CASCADE,
-    is_independent BOOLEAN,
-    full_name TEXT,
-    party_ticker TEXT,
+    election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+
+    circonscription_id INTEGER NOT NULL REFERENCES circonscriptions(id) ON DELETE CASCADE,
+
+    candidate_id       INTEGER NOT NULL REFERENCES candidates(id),
+
     raw_value INTEGER,
 
-    bbox_json TEXT,
+    winner    BOOLEAN DEFAULT NULL,
 
     validated_by UUID REFERENCES users(id) ON DELETE SET NULL, -- Validateur qui a approuvé
     validation_status VARCHAR(20) DEFAULT 'PENDING',
@@ -118,11 +172,20 @@ CREATE TABLE IF NOT EXISTS candidate_results_staging (
 );
 
 
-
-
-CREATE TABLE IF NOT EXISTS locality_winner(
+CREATE TABLE IF NOT EXISTS chat_session(
     id SERIAL PRIMARY KEY,
-    candidate_id INTEGER NOT NULL REFERENCES candidate_results_staging(id) ON DELETE CASCADE
+    election_id UUID,
+    session_id UUID NOT NULL,
+    question text,
+
+    answer text,
+
+    ask_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    answer_time TIMESTAMP,
+
+    status VARCHAR(20) DEFAULT 'PENDING',
+    answer_meta JSONB
+
 );
 
 -- 6. TRANSACTIONAL (VOTE EN DIRECT)

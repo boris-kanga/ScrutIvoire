@@ -13,28 +13,28 @@ from src.core.config import LLM_PROVIDERS
 logger = get_logger(__name__)
 
 
+# Modèles disponibles — ajuste les priorités selon ton usage
 MODELS = {
-    "fast":  ("llama3.1-8b", False, 3),
-    "large": ("qwen-3-235b-a22b-instruct-2507", False, 2),
+    "main":  ("gpt-4o-mini", False, 1),
+    "large": ("gpt-4o",      False, 1),
+    "fast":  ("gpt-4o-mini", False, 1),
 }
 
 
-class CerebrasProvider(OpenAICompatibleMixin, LLMProvider):
+class OpenAIProvider(OpenAICompatibleMixin, LLMProvider):
     """
-    Provider Cerebras — OpenAI-compatible API.
-    Ultra rapide (~2600 tok/s), idéal pour Type B.
-    Supporte le tool calling et le streaming.
-    Note : response_format non supporté (modèles llama Cerebras l'ignorent).
+    Provider OpenAI — API officielle.
+    Compatible tool calling, streaming, response_format (json_object / json_schema).
+    Hérite du mixin OpenAI-compatible — aucune logique dupliquée.
     """
 
-    name = "cerebras"
-    BASE_URL = "https://api.cerebras.ai/v1/chat/completions"
-    supports_response_format: bool = False  # ignoré par les modèles Cerebras
+    name = "openai"
+    BASE_URL = "https://api.openai.com/v1/chat/completions"
 
     def __init__(self):
-        self._api_key = LLM_PROVIDERS.get("CEREBRAS")
+        self._api_key = LLM_PROVIDERS.get("OPENAI")
         if not self._api_key:
-            raise ValueError("CEREBRAS_KEY manquante dans la config")
+            raise ValueError("OPENAI_KEY manquante dans la config")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         if request.stream:
@@ -57,15 +57,21 @@ class CerebrasProvider(OpenAICompatibleMixin, LLMProvider):
 
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
-            logger.warning(f"Cerebras HTTP {status} : {e.response.text[:200]}")
-            return self._error_response(f"HTTP {status}")
+            body_text = e.response.text[:300]
+            logger.warning(f"OpenAI HTTP {status} : {body_text}")
+            # Détail de l'erreur OpenAI (quota, clé invalide, etc.)
+            try:
+                detail = e.response.json().get("error", {}).get("message", "")
+            except Exception:
+                detail = body_text
+            return self._error_response(f"HTTP {status}: {detail}")
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
-            logger.warning(f"Cerebras timeout/connect : {e}")
+            logger.warning(f"OpenAI timeout/connect : {e}")
             return self._error_response(f"timeout: {e}")
 
         except Exception as e:
-            logger.exception("Cerebras erreur inattendue")
+            logger.exception("OpenAI erreur inattendue")
             return self._error_response(str(e))
 
     async def stream(self, request: LLMRequest) -> AsyncGenerator[LLMStreamChunk, None]:

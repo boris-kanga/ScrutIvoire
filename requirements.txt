@@ -10,6 +10,7 @@ werkzeug
 
 hypercorn
 flask[async]>=3.1.3
+asgiref
 
 python-socketio
 dotenv

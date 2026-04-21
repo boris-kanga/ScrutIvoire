@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -17,6 +18,8 @@ load_dotenv(os.path.join(WORK_DIR, "config", ".env"))
 
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+SESSION_COOKIE_HTTPONLY = True
 
 
 REDIS_CONFIG = {
@@ -26,6 +29,9 @@ REDIS_CONFIG = {
 
 
 POSTGRES_DB_URI = os.environ.get("DB_URI", "postgresql://localhost/scrutivoire_db")
+
+LLM_DB_URI = os.environ.get("LLM_DB_URI", "postgresql://localhost/scrutivoire_db")
+LLM_SLIDING_WINDOW_DEEP = 3
 
 
 S3_CONFIG = {

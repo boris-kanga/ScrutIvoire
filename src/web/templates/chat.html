@@ -27,6 +27,9 @@
             transform: scale(1)
         }
     }
+    .text-message strong{
+        background: #ee555555;
+    }
 </style>
 
 <template id="smart-table">
@@ -71,13 +74,13 @@
 </nav>
 <!-- Main Workspace Canvas -->
 <main class=" pt-10 pb-32 flex flex-col items-center min-h-screen px-4 md:px-8">
-    <div class="w-full max-w-[1000px] flex flex-col mt-20">
+    <div id="main-vue" class="w-full max-w-[1000px] flex flex-col mt-20">
         <!-- Zen Greeting Empty State -->
         <section
                 class="flex flex-col items-center text-center space-y-6 py-6">
             <div class="relative">
                 <div class="absolute -inset-4 bg-orange-500/5 blur-2xl rounded-full"></div>
-                <span class="material-symbols-outlined text-orange-500 text-5xl relative"
+                <span class="material-symbols-outlined text-orange-500 text-9xl relative"
                       style="font-variation-settings: 'FILL' 1;">lens_blur</span>
             </div>
             <h1 class="text-[#F5F5F0] text-2xl font-light tracking-tight max-w-md leading-relaxed">
@@ -86,14 +89,18 @@
             </h1>
         </section>
 
-        <small class="flex flex-col items-center text-center text-[#aaaaaa] text-xs font-light tracking-tight py-1">Exemples</small>
+        <small id="example-text" class="hidden flex flex-col items-center text-center text-[#aaaaaa] text-xs font-light tracking-tight py-1">Exemples</small>
         <!-- Conversation Grid / Atomic Data Cards -->
         <div id="example-chart" class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         </div>
     </div>
+    <div id="chat-box" class="hidden w-full max-w-[1000px] flex flex-col mt-20">
+
+    </div>
+
 </main>
 <!-- Floating Pill Input -->
-<div class="fixed bottom-8 left-0  right-0 flex justify-center px-4 pointer-events-none">
+<form id="form-chat" data-disabled="true" class="fixed bottom-8 left-0  right-0 flex justify-center px-4 pointer-events-none">
     <div class="w-full max-w-[1000px] pointer-events-auto">
         <div class="relative group">
             <div class="absolute -inset-0.5 bg-orange-500/20 rounded-full blur opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
@@ -106,7 +113,7 @@
                     <button class="p-2 hover:bg-zinc-800 rounded-full transition-colors">
                         <span class="material-symbols-outlined text-zinc-400 text-[20px]">mic</span>
                     </button>
-                    <button class="p-2 bg-orange-500 text-black rounded-full hover:bg-orange-400 active:scale-95 transition-all">
+                    <button disabled id="ask-btn" class="p-2 bg-orange-500 text-black rounded-full hover:bg-orange-400 active:scale-95 transition-all">
                         <span class="material-symbols-outlined text-[20px]"
                               style="font-variation-settings: 'wght' 600;">arrow_upward</span>
                     </button>
@@ -114,18 +121,149 @@
             </div>
         </div>
     </div>
-</div>
+</form>
 
 {% endblock %}
 
 {% block script %}
+<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+
 <script>
+
+    function createPendingBubble() {
+        let $aiResponse = $(`
+            <div class="message-pending message ai-msg self-start mb-4 flex flex-col items-start max-w-[85%]">
+                <div class="content prose prose-invert prose-p:leading-relaxed prose-pre:p-0 p-4 bg-[#2f2f2f] text-gray-100 rounded-2xl rounded-tl-none border border-white/5
+                            transform transition-all duration-300 opacity-0 translate-y-4">
+
+                    <!-- L'indicateur de frappe -->
+                    <div class="typing-indicator flex gap-1 items-center h-6">
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-duration:0.8s]"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]"></span>
+                    </div>
+                    <div class="text-message hidden"></div>
+                </div>
+            </div>
+        `);
+
+        $('#chat-box').append($aiResponse);
+
+        // Animation d'entrée
+        setTimeout(() => {
+            $aiResponse.find('.content').removeClass('opacity-0 translate-y-4').addClass('opacity-100 translate-y-0');
+            scrollToBottom();
+        }, 50);
+
+        return $aiResponse; // On retourne l'objet pour pouvoir le modifier plus tard
+    }
+
+
+    function scrollToBottom() {
+        $("#chat-box").animate({ scrollTop: $('#chat-box')[0].scrollHeight }, 300);
+    }
+
+
+    socket.on('chat_response', (response) => {
+        console.log(response);
+        const $currentAiBubble = $(".message-pending");
+        $currentAiBubble.removeClass("message-pending")
+            .find('.typing-indicator').fadeOut(200, function() {
+                $(this).remove();
+                const display = response.display.toLowerCase();
+                const rawHtml = marked.parse(response.text);
+                $currentAiBubble.find('.text-message')
+                    .html(rawHtml)
+                    .hide()
+                    .fadeIn(400)
+                ;
+                if (display === "text"){
+                    return
+                }
+
+                const extraZone = $(
+                    `<div class="message ai-msg self-start mb-4 flex flex-col items-start max-w-[100%] min-w-[300px] w-full min-h-[300px]">
+                    </div>`
+                )
+
+
+                $currentAiBubble.parent().append(extraZone);
+                const d = response["data"];
+                if (display === "table"){
+                    d["title"] = d["title"] || "Table";
+                    d["class_"] = "kb-data-table push-up";
+
+                    extraZone.html(createDataCard(d));
+                }else if (display === "pie"){
+                    const chart = createPieChart({
+                        data: d,
+                        id: "kb-data-pie-" + $(".kb-data-pie").length,
+                        class_: "kb-data-pie push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
+                    });
+                    extraZone.get(0).appendChild(chart);
+
+                }else if (display === "bar"){
+                    const chart = createBarChart({ data: d, id: "kb-data-bar-" + $(".kb-data-bar").length, class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between" })
+                    extraZone.get(0).appendChild(chart);
+                }
+                scrollToBottom();
+
+            });
+    });
+
+    socket.on('connection_ack', (data) => {
+        $("#ask-btn").prop("disabled", false);
+        $("form[data-disabled]").removeAttr("data-disabled")
+    });
+    $("#form-chat").submit((e)=>{
+
+        e.preventDefault();
+        const input = $(e.currentTarget).find("input");
+        const question = input.val().trim();
+        if (!question || $("form[data-disabled]").length) return;
+        $("#main-vue").hide().next().removeClass("hidden");
+        console.log("question:", question);
+        fetch(config_app.api_base + "/chat/{{ id_ }}", {
+            method: "POST",
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({question})
+        }).then(response=>{
+            return response.json();
+        }).then((data)=>{
+            console.log("call llm", data);
+            createPendingBubble();
+        });
+
+        let $bulle = $(`
+                <div class="message self-end mb-2 p-3 bg-[#eeeeee22] text-white rounded-2xl rounded-tr-none
+                            transform transition-all duration-300 ease-out opacity-0 translate-y-4">
+                    ${question}
+                </div>
+        `);
+
+        // 2. Ajouter au chat
+        $('#chat-box').append($bulle);
+        input.val('');
+
+        // 3. Déclencher l'animation (remonter et devenir visible)
+        // On retire les classes de décalage et on met l'opacité à 100
+        setTimeout(() => {
+            $bulle.removeClass('opacity-0 translate-y-4').addClass('opacity-100 translate-y-0');
+        }, 50);
+
+        // 4. Scroll automatique vers le bas
+        $("#chat-box").animate({ scrollTop: $('#chat-box')[0].scrollHeight }, 300);
+
+    })
     $(document).ready(()=>{
-        fetch(config_app.api_base + "/chat/base-stat//{{ id_ }}").then((response)=>{
+        fetch(config_app.api_base + "/chat/base-stat/{{ id_ }}").then((response)=>{
             return response.json()
         }).then((data)=>{
             console.log(data)
-            $("#archive-name").text(data.election.name);
+            $("#example-text").fadeIn(300);
+            $("#archive-name").text(data.election.type + " " + data.election.name);
             $(".shimmer-container").hide();
             $(".data-container").removeClass("hidden");
             data.charts.forEach(([type, d])=>{
@@ -134,15 +272,16 @@
                     document.getElementById('example-chart').innerHTML += createDataCard(d);
                 }
                 if (type === "bar"){
-                    document.getElementById('example-chart').innerHTML += createBarChart({
-                        data: d,
-                        id: "kb-data-bar-"+$(".kb-data-bar").length,
-                        class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
-                    });
+                    document.getElementById('example-chart').appendChild(
+                        createBarChart({
+                            data: d,
+                            id: "kb-data-bar-"+$(".kb-data-bar").length,
+                            class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
+                        })
+                    )
                 }
+
             })
-
-
         });
     })
 </script>
