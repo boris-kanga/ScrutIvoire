@@ -22,6 +22,7 @@ from src.domain.message_broker import MessageBrokerChannel
 
 from io import BytesIO, IOBase
 
+from src.repository.entity_resolution import EntityResolution
 from src.utils.tools import value_parser
 
 REPORT_FILE_NAME = "rapport.pdf"
@@ -35,17 +36,9 @@ class ElectionService:
 
         self.storage = storage
 
-        self._commune_reg = re.compile(r"\bc\s*o\s*m\s*m\s*u\s*n\s*e\s*s?\b", flags=re.I)
-        self._sp_reg = re.compile(r"\b(s\s*|s\s*o\s*u\s*s\s*)[\\/\.\-\s]*(p|p\s*r\s*[eèéė]\s*f\s*(?:\.|e\s*c\s*t\s*u\s*r\s*e\s*s?)?)\b", flags=re.I)
-
-        self._fuzz_threshold = {
-            "commune": 70,
-            "sous_prefecture": 70,
-            "zone": 80,
-            "region": 80,
-            "candidate": 70,
-            "party": 70
-        }
+        self.resolver_entity = EntityResolution(
+            repo.db
+        )
 
     async def get_all(self):
         els = await self.repo.get_all_elections()
@@ -84,105 +77,7 @@ class ElectionService:
         party_ticker.append(["INDEPENDANT", independent])
         return party_ticker
 
-    def extraction_ref_entities(self, value, type_="locality"):
-        refs = []
-        canonic_name = remove_accent_from_text(
-            (" ".join(value.split())).upper())
-        if type_ == "locality":
-            canonic_name = re.sub(r"\d\(\)\.", "", canonic_name)
-            parts = re.split(r"(?:,|\be\s*t\b)", canonic_name, flags=re.I)
 
-            current = []
-            got_commune = False
-            got_sp = False
-            for i, part in enumerate(parts):
-                part = part.strip()
-                if not part:
-                    continue
-                _com = self._commune_reg.search(part)
-                _sp = self._sp_reg.search(part)
-
-                if got_commune:
-                    if not _sp:
-                        current = []
-                    got_commune = False
-
-                if got_sp:
-                    if not _com:
-                        current = []
-                    got_sp = False
-
-                if _com:
-                    s, e = _com.span()
-                    before = part[:s].strip()
-                    end = part[e:].strip()
-                    if end.startswith("."):
-                        end = end[1:]
-                    if before:
-                        current.append(before)
-                    refs.extend([
-                        {
-                            "type": "COMMUNE",
-                            "raw_name": x,
-                            "canonic_name": x
-                        }
-                        for x in current
-                    ])
-                    if end:
-                        current.append(end)
-                        current = []
-                    else:
-                        if i == len(parts) - 1:
-                            current = []
-                        got_commune = True
-                    continue
-
-                if _sp:
-                    s, e = _sp.span()
-                    before = part[:s].strip()
-                    end = part[e:].strip()
-                    if end.startswith("."):
-                        end = end[1:]
-                    if before:
-                        current.append(before)
-                    refs.extend([
-                        {
-                            "type": "SOUS_PREFECTURE",
-                            "raw_name": x,
-                            "canonic_name": x
-                        }
-                        for x in current
-                    ])
-                    if end:
-                        current.append(end)
-                        current = []
-                    else:
-                        if i == len(parts) - 1:
-                            current = []
-                        got_sp = True
-
-                    continue
-
-                current.append(part)
-            if current and not got_commune and not got_sp:
-                refs.extend([
-                    {
-                        "type": "ZONE",
-                        "raw_name": x,
-                        "canonic_name": x
-                    }
-                    for x in current
-                ])
-        else:
-            refs.extend([
-                {
-                    "type": type_.upper(),
-                    "raw_name": value,
-                    "canonic_name": canonic_name
-                }
-            ])
-
-        return refs
 
     @staticmethod
     def text_as_canonic(text):
@@ -260,6 +155,7 @@ class ElectionService:
                 "original_raw_name": locality["value"].replace("\n", " "),
                 "source_id": election.doc.id,
                 "bbox_json": json.dumps(locality["cords"]),
+                "crop_url": locality["crop_url"]
             })
 
         c_ids = await self.repo.insert_archived_staging_data(
@@ -269,7 +165,7 @@ class ElectionService:
         for i, locality in enumerate(extracted_locality):
             # winner - value - cords - candidates
             cc = circonscriptions[i]
-            refs = self.extraction_ref_entities(cc["original_raw_name"], type_="locality")
+            refs = self.resolver_entity.extraction_ref_entities(cc["original_raw_name"], type_="locality")
             ref_entities += [
                 {
                     "circonscription_id": c_ids[i],
@@ -302,7 +198,8 @@ class ElectionService:
                     "original_raw_name": c["full_name"],
                     "bbox_json": json.dumps(c["bbox_json"]),
                     "is_independent": is_ind,
-                    "source_id": election.doc.id
+                    "source_id": election.doc.id,
+                    "crop_url": c["crop_url"]
                 }
                 if is_ind is False:
                     cand["party_id"] = political_parties.get(c.get("party_ticker"))
@@ -367,6 +264,11 @@ class ElectionService:
         if drafts:
             return drafts[0]
         return None
+
+    async def get_history(self, election_id, session_id):
+        return await self.repo.get_chat_history(
+            election_id, session_id
+        )
 
     async def get(self, election_id):
         election = await self.repo.get(election_id)
@@ -437,21 +339,6 @@ class ElectionService:
             }
         )
 
-    async def entity_resolution(self, entity: str, category: str, election_id: str):
-        category = category.upper()
-        if category == "ZONE":
-            category = ['COMMUNE', 'SOUS_PREFECTURE', 'ZONE', "REGION"]
-        choices_from_db = await self.repo.get_entity_by_category(
-            category, election_id
-        )
-        choices_from_db = {c["canonic_name"]: c for c in choices_from_db}
-        keys = list(choices_from_db.keys())
-        m, proba = process.extractOne(entity, keys, scorer=fuzz.token_sort_ratio)
-
-        if proba > self._fuzz_threshold.get(category.lower(), 90):
-            return choices_from_db[m]
-        return {}
-
     async def ask_llm(self, question, archive_id, room_id):
         await self._mr.publish(
             MessageBrokerChannel.CHAT,
@@ -462,6 +349,7 @@ class ElectionService:
 
             }
         )
+        # on va attendre que le worker reponde
         async for m in self._mr.subscribe(room_id, timeout=60):
             break
 

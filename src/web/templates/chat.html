@@ -30,7 +30,40 @@
     .text-message strong{
         background: #ee555555;
     }
+
+    form[data-disabled] input{
+        opacity: 0.5;
+        pointer-events: none;
+
+    }
+    @keyframes error-resp-anim{
+        from{
+            border-color: red;
+        }
+        80%{
+            border-color: #fffff;
+        }
+        100%{
+            border-color: red;
+        }
+    }
+
+    .message.error{
+        color: #fff!important;
+        animation: push-up-anim 500ms;
+    }
+    .message.error content{
+        border-color: red!important;
+        animation: error-resp-anim 500ms;
+    }
 </style>
+
+<style>
+    .source-tooltip {
+        @apply invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200;
+    }
+</style>
+
 
 <template id="smart-table">
     <div class="group relative glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 cursor-zoom-in">
@@ -106,7 +139,7 @@
             <div class="absolute -inset-0.5 bg-orange-500/20 rounded-full blur opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
             <div class="relative flex items-center bg-zinc-900/90 backdrop-blur-2xl border border-white/5 rounded-full px-6 py-4 shadow-[0_0_20px_rgba(255,130,0,0.15)] glow-orange">
                 <span class="material-symbols-outlined text-zinc-500 mr-4">search</span>
-                <input class="bg-transparent border-none focus:ring-0 text-sm text-[#F5F5F0] placeholder-zinc-600 w-full"
+                <input disabled class="bg-transparent border-none focus:ring-0 text-sm text-[#F5F5F0] placeholder-zinc-600 w-full"
                        placeholder="Posez une question..."
                        type="text"/>
                 <div class="flex items-center gap-2 ml-4">
@@ -127,8 +160,21 @@
 
 {% block script %}
 <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+<script src="{{ url_for('static', filename='js/source-badges.js') }}"></script>
 
+<script src="{{ url_for('static', filename='js/kb-choice.js') }}"></script>
 <script>
+
+    function blockTyping(){
+        $("#ask-btn").prop("disabled", true);
+        $("#form-chat").find("input").prop("disabled", true);
+        $("#form-chat").attr("data-disabled", "true")
+    }
+    function deblockTyping(){
+        $("#ask-btn").prop("disabled", false);
+        $("#form-chat").find("input").prop("disabled", false);
+        $("#form-chat").removeAttr("data-disabled")
+    }
 
     function createPendingBubble() {
         let $aiResponse = $(`
@@ -160,16 +206,98 @@
 
 
     function scrollToBottom() {
-        $("#chat-box").animate({ scrollTop: $('#chat-box')[0].scrollHeight }, 300);
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    function addIAResponse(response, elm, has_history=false){
+        if (response.source) {
+            renderSource(response.source, elm);
+        }
+        $(elm).toggleClass("error", response?.error);
+        const display = response.display.toLowerCase();
+        const rawHtml = marked.parse(response.text);
+        $(elm).find('.text-message')
+            .html(rawHtml)
+            .hide()
+            .fadeIn(400)
+        ;
+        if (response.error){
+            if (!has_history){
+                $("#form-chat").find("input").val(
+                    $(elm).text().strip()
+                )
+            }
+            return;
+        }
+        if (display === "text"){
+            return
+        }
+        const extraZone = $(
+            `<div class="message ai-msg self-start mb-4 flex flex-col items-start max-w-[100%] min-w-[300px] w-full min-h-[300px]">
+            </div>`
+        )
+
+        if (display === "options"){
+            if (!has_history){
+                blockTyping();
+                renderClarification(
+                    response.options,
+                    elm,
+                    (resolved) => {
+                        console.log(resolved);
+                        // resolved = [{tool_id, origin, category, id, canonic_name}, ...]
+                        deblockTyping();
+                        $("#form-chat").find("input").val(
+                            resolved.map((r, i)=>{
+                                return `[${i+1}] ${r.origin} --> ${r.canonic_name}`
+                            }).join("\n")
+                        )
+                        $("#form-chat").attr("data-options", JSON.stringify({"options": resolved}))
+                            .submit()
+                        ;
+                    },
+                    ()=>{
+                        deblockTyping();
+                    }
+                );
+            }
+            return;
+        }
+
+        $(elm).parent().append(extraZone);
+
+        const d = response["data"];
+        if (display === "table"){
+            d["title"] = d["title"] || "Table";
+            d["class_"] = "kb-data-table push-up";
+
+            extraZone.html(createDataCard(d));
+        }else if (display === "pie"){
+            const chart = createPieChart({
+                data: d,
+                id: "kb-data-pie-" + $(".kb-data-pie").length,
+                class_: "kb-data-pie push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
+            });
+            extraZone.get(0).appendChild(chart);
+
+        }else if (display === "bar"){
+            const chart = createBarChart({ data: d, id: "kb-data-bar-" + $(".kb-data-bar").length, class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between" })
+            extraZone.get(0).appendChild(chart);
+        }
+
     }
 
 
     socket.on('chat_response', (response) => {
         console.log(response);
-        const $currentAiBubble = $(".message-pending");
+        deblockTyping();
+        const $currentAiBubble = $(".message-pending").toggleClass("error", response?.error);
         $currentAiBubble.removeClass("message-pending")
             .find('.typing-indicator').fadeOut(200, function() {
                 $(this).remove();
+                if (response.source) {
+                    renderSource(response.source, $currentAiBubble.get(0));
+                }
                 const display = response.display.toLowerCase();
                 const rawHtml = marked.parse(response.text);
                 $currentAiBubble.find('.text-message')
@@ -177,6 +305,14 @@
                     .hide()
                     .fadeIn(400)
                 ;
+
+                if (response.error){
+                    $("#form-chat").find("input").val(
+                        $currentAiBubble.prev().text().strip()
+                    )
+                    return;
+                }
+
                 if (display === "text"){
                     return
                 }
@@ -186,6 +322,31 @@
                     </div>`
                 )
 
+                if (display === "options"){
+                    blockTyping();
+                    renderClarification(
+                        response.options,
+                        $currentAiBubble.get(0),
+                        (resolved) => {
+                            console.log(resolved);
+                            // resolved = [{tool_id, origin, category, id, canonic_name}, ...]
+                            deblockTyping();
+                            $("#form-chat").find("input").val(
+                                resolved.map((r, i)=>{
+                                    return `[${i+1}] ${r.origin} --> ${r.canonic_name}`
+                                }).join("\n")
+                            )
+                            $("#form-chat").attr("data-options", JSON.stringify({"options": resolved}))
+                                .submit()
+                            ;
+
+                        },
+                        ()=>{
+                            deblockTyping();
+                        }
+                    );
+                    return;
+                }
 
                 $currentAiBubble.parent().append(extraZone);
                 const d = response["data"];
@@ -212,23 +373,32 @@
     });
 
     socket.on('connection_ack', (data) => {
-        $("#ask-btn").prop("disabled", false);
-        $("form[data-disabled]").removeAttr("data-disabled")
+        deblockTyping();
     });
     $("#form-chat").submit((e)=>{
 
         e.preventDefault();
         const input = $(e.currentTarget).find("input");
         const question = input.val().trim();
-        if (!question || $("form[data-disabled]").length) return;
+        const options = $(e.currentTarget).attr("data-options");
+
+        $(e.currentTarget).removeAttr("data-options");
+
+        if ((!question && !options) || $("form[data-disabled]").length) return;
         $("#main-vue").hide().next().removeClass("hidden");
-        console.log("question:", question);
+        console.log("question:", question, "options:", options);
+        let body
+        if (options){
+            body = options
+        }else{
+            body = JSON.stringify({question})
+        }
         fetch(config_app.api_base + "/chat/{{ id_ }}", {
             method: "POST",
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({question})
+            body
         }).then(response=>{
             return response.json();
         }).then((data)=>{
@@ -251,37 +421,72 @@
         // On retire les classes de décalage et on met l'opacité à 100
         setTimeout(() => {
             $bulle.removeClass('opacity-0 translate-y-4').addClass('opacity-100 translate-y-0');
+            blockTyping();
         }, 50);
 
         // 4. Scroll automatique vers le bas
         $("#chat-box").animate({ scrollTop: $('#chat-box')[0].scrollHeight }, 300);
 
+
     })
     $(document).ready(()=>{
+
+        fetch(config_app.api_base + "/chat/history/{{ id_ }}").then((response)=>response.json()).then(data=>{
+             console.log(data);
+
+        })
+
         fetch(config_app.api_base + "/chat/base-stat/{{ id_ }}").then((response)=>{
             return response.json()
         }).then((data)=>{
             console.log(data)
-            $("#example-text").fadeIn(300);
+
             $("#archive-name").text(data.election.type + " " + data.election.name);
             $(".shimmer-container").hide();
             $(".data-container").removeClass("hidden");
-            data.charts.forEach(([type, d])=>{
-                if (type === "table"){
-                    d["class_"] = "kb-data-table push-up"
-                    document.getElementById('example-chart').innerHTML += createDataCard(d);
-                }
-                if (type === "bar"){
-                    document.getElementById('example-chart').appendChild(
-                        createBarChart({
-                            data: d,
-                            id: "kb-data-bar-"+$(".kb-data-bar").length,
-                            class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
-                        })
-                    )
-                }
+            if (data.charts){
+                $("#example-text").fadeIn(300);
 
-            })
+                data.charts.forEach(([type, d])=>{
+                    if (type === "table"){
+                        d["class_"] = "kb-data-table push-up"
+                        document.getElementById('example-chart').innerHTML += createDataCard(d);
+                    }
+                    if (type === "bar"){
+                        document.getElementById('example-chart').appendChild(
+                            createBarChart({
+                                data: d,
+                                id: "kb-data-bar-"+$(".kb-data-bar").length,
+                                class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
+                            })
+                        )
+                    }
+
+                })
+            }else{
+                $("#main-vue").hide().next().removeClass("hidden");
+                data.history.forEach((quiz)=>{
+                    let $bulle = $(`
+                        <div class="message self-end mb-2 p-3 bg-[#eeeeee22] text-white rounded-2xl rounded-tr-none
+                                    transform transition-all duration-300 ease-out opacity-0 translate-y-4">
+                            ${quiz.question}
+                        </div>
+                    `);
+                    $('#chat-box').append($bulle);
+                    let $aiResponse = $(`
+                        <div class="message-pending message ai-msg self-start mb-4 flex flex-col items-start max-w-[85%]">
+                            <div class="content prose prose-invert prose-p:leading-relaxed prose-pre:p-0 p-4 bg-[#2f2f2f] text-gray-100 rounded-2xl rounded-tl-none border border-white/5
+                                        transform transition-all duration-300 opacity-0 translate-y-4">
+                                <div class="text-message hidden"></div>
+                            </div>
+                        </div>
+                    `);
+
+                    $('#chat-box').append($aiResponse);
+
+                })
+
+            }
         });
     })
 </script>

@@ -1,15 +1,107 @@
+import json
+
 import aioboto3
 from botocore.exceptions import ClientError
 
+
 class S3StorageAdapter:
-    def __init__(self, endpoint, access_key, secret_key, region="us-east-1", **_):
-        self.session = aioboto3.Session()
-        self.config = {
-            "endpoint_url": endpoint,
-            "aws_access_key_id": access_key,
+    def __init__(self, endpoint, access_key, secret_key, region="us-east-1", public_url="", **_):
+        self.session    = aioboto3.Session()
+        self.region     = region
+        self.public_url = public_url.rstrip("/")
+        self.config     = {
+            "endpoint_url":          endpoint,
+            "aws_access_key_id":     access_key,
             "aws_secret_access_key": secret_key,
-            "region_name": region,
+            "region_name":           region,
         }
+        # Détection automatique AWS vs MinIO/autre
+        self._is_aws = endpoint is None
+
+    def _object_url(self, bucket: str, key: str) -> str:
+        """Construit l'URL publique d'un objet."""
+        if self.public_url:
+            return f"{self.public_url}/{key}"
+        elif self._is_aws:
+            return f"https://{bucket}.s3.{self.region}.amazonaws.com/{key}"
+        else:
+            base = self.config["endpoint_url"].rstrip("/")
+            return f"{base}/{bucket}/{key}"
+
+    async def disable_block_public_access(self, bucket: str):
+        """Requis sur AWS avant de mettre une policy publique."""
+        async with self.session.client("s3", **self.config) as s3:
+            await s3.put_public_access_block(
+                Bucket=bucket,
+                PublicAccessBlockConfiguration={
+                    "BlockPublicAcls": False,
+                    "IgnorePublicAcls": False,
+                    "BlockPublicPolicy": False,
+                    "RestrictPublicBuckets": False,
+                }
+            )
+
+    async def set_public(self, bucket: str, prefix: str=None):
+        """
+        Rend public uniquement les objets sous un prefix.
+        ex: prefix="crops/" → seul bucket/crops/* est public
+        """
+        if self._is_aws:
+            await self.disable_block_public_access(bucket)
+
+        ressource = f"{bucket}"
+        if prefix is not None:
+            ressource = f"{ressource}/{prefix.strip('/')}"
+
+        policy = json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": f"arn:aws:s3:::{ressource}/*"
+            }]
+        })
+        async with self.session.client("s3", **self.config) as s3:
+            await s3.put_bucket_policy(Bucket=bucket, Policy=policy)
+
+    async def upload(self, bucket, file_source, remote_name, content_type=None, public=False, retrieve_url=False):
+        async with self.session.client("s3", **self.config) as s3:
+            # Créer le bucket si nécessaire
+            try:
+                await s3.head_bucket(Bucket=bucket)
+            except ClientError:
+                await s3.create_bucket(Bucket=bucket)
+
+            # Upload
+            extra_args = {}
+            if public and self._is_aws:
+                extra_args["ACL"] = "public-read"  # AWS uniquement — MinIO gère au niveau bucket
+
+            if isinstance(file_source, str):
+                await s3.upload_file(file_source, bucket, remote_name, ExtraArgs=extra_args or None)
+            else:
+                body = file_source if not isinstance(file_source, bytes) else file_source
+                await s3.put_object(
+                    Bucket=bucket,
+                    Key=remote_name,
+                    Body=body,
+                    ContentType=content_type or "application/octet-stream",
+                    **extra_args,
+                )
+
+            # Retourner l'URL
+            if public:
+                return self._object_url(bucket, remote_name)
+            else:
+                if retrieve_url:
+                    return await s3.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": bucket, "Key": remote_name},
+                        ExpiresIn=60 * 60 * 24 * 7,  # 7 jours
+                    )
+            return None
+
 
     async def delete_bucket(self, bucket_name):
         async with self.session.client("s3", **self.config) as s3:
@@ -77,32 +169,6 @@ class S3StorageAdapter:
             except ClientError:
                 await s3.create_bucket(Bucket=bucket_name)
                 print(f"Bucket '{bucket_name}' créé.")
-
-    async def upload(self, bucket, file_source, remote_name):
-        """
-        Upload un fichier vers S3.
-        file_source peut être :
-        1. Un chemin local (str) -> on utilise upload_file
-        2. Un objet file-like (ex: request.files['file']) -> on utilise put_object
-        """
-        async with self.session.client("s3", **self.config) as s3:
-            try:
-                # verifier si le bucket exists
-                await s3.head_bucket(Bucket=bucket)
-            except ClientError:
-                # creer sinon
-                await s3.create_bucket(Bucket=bucket)
-                print(f"Bucket '{bucket}' créé.")
-            if isinstance(file_source, str):
-                # Cas d'un fichier local sur le disque
-                await s3.upload_file(file_source, bucket, remote_name)
-            else:
-                # Cas d'un objet FileStorage (Flask) ou BytesIO
-                # On lit le contenu du stream
-                await s3.put_object(Bucket=bucket, Key=remote_name,
-                                    Body=file_source)
-
-            return f"Uploaded {remote_name}"
 
     async def download(self, bucket, remote_name, local_path):
         """Télécharge un objet du bucket vers le disque local."""

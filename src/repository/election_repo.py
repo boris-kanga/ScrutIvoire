@@ -11,6 +11,8 @@ from src.infrastructure.database.pgdb import PgDB
 
 from functools import partial
 
+from src.utils.tools import cache
+
 
 class ElectionRepo:
     def __init__(self, db: PgDB):
@@ -294,6 +296,31 @@ class ElectionRepo:
             )
         )
 
+    async def get_chat_history(self, election_id, session_id, status="DONE"):
+        res = await self.db.run_query(
+            f"""
+            SELECT * 
+            FROM chat_session 
+            WHERE election_id = $1 AND session_id=$2
+            {'AND status=$3' if status else ''}
+            ORDER BY ask_time
+            """, params=(
+                election_id,
+                session_id, *([] if not status else [status])
+            )
+        )
+        data = []
+        for r in res:
+            try:
+                data.append(
+                    {
+                        "question": r["question"],
+                        "answer": json.loads(r["answer"])
+                    }
+                )
+            except json.decoder.JSONDecodeError:
+                continue
+        return data
 
     async def get_entity_by_category(self, category, election_id):
         if not isinstance(category, list):

@@ -63,7 +63,7 @@ async def archive_from_file(storage: FileStorageProtocol, db: PgDB, rd: RedisDB)
         )
     except Exception:
         traceback.print_exc()
-        await election.delete()
+        await service.delete_archive(election.id)
         return jsonify({"ok": False}), 400
 
     return jsonify({"ok": True, "election_id": election.id})

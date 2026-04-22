@@ -8,8 +8,8 @@ from functools import partial
 from typing import Dict
 
 import pdfplumber
+from PIL import Image
 
-from src.domain.election import LocalityStagingResult
 from src.infrastructure.database.pgdb import PgDB
 from src.infrastructure.database.redisdb import RedisDB
 
@@ -22,7 +22,6 @@ from src.infrastructure.message_broker.redis_message_broker import \
 
 from src.domain.message_broker import MessageBrokerChannel
 from src.repository.election_repo import ElectionRepo
-from src.repository.llm_repo import LLMRepo
 
 from src.services.election_service import ElectionService
 from src.services.llm_service import LLMService
@@ -36,10 +35,17 @@ from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
     get_locality_separators
 
 
+PADDING = 5
+
+
+async def _to_async(func, *args, **kwargs):
+    return await asyncio.to_thread(func, *args, **kwargs)
+
+
 class Worker:
     def __init__(
             self,
-            election_service=None,
+            election_service: ElectionService=None,
             socket=None,
             llm_service=None,
             msg_broker=None
@@ -60,7 +66,7 @@ class Worker:
             )
 
         if llm_service is None:
-            llm_service = LLMService(election_service.entity_resolution)
+            llm_service = LLMService()
 
         self.election_service = election_service
         self.socket           = socket
@@ -167,6 +173,40 @@ class Worker:
             "election_type":            result["election_metadata"]["type"]
         }
 
+    @staticmethod
+    async def _crop(_page, _bbox_json, index):
+        if _bbox_json.get(index) is None:
+            return None
+        x0, top, x1, bottom = _bbox_json[index]
+
+        x0 = max(0, x0 - PADDING)
+        top = max(0, top - PADDING)
+        x1 = min(float(_page.width), x1 + PADDING)
+        bottom = min(float(_page.height), bottom + PADDING)
+
+        c = await _to_async(_page.crop, (x0, top, x1, bottom))
+        return (await _to_async(c.to_image, resolution=150)).original  # PIL onject
+
+    @staticmethod
+    def vertical_merge_pil_image(list_img):
+        list_img = list(filter(None, list_img))
+
+        buf = io.BytesIO()
+        if not list_img:
+            return buf.getvalue()
+        total_height = sum(img.height for img in list_img)
+        max_width = max(img.width for img in list_img)
+        merged = Image.new("RGB", (max_width, total_height), (255, 255, 255))
+
+        y = 0
+        for img in list_img:
+            merged.paste(img, (0, y))
+            y += img.height
+
+        merged.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+
     async def _processing_archive_task(self, room, election_id):
         print("debut du processing de election id", room, election_id)
         election = await self.election_service.get(election_id)
@@ -199,9 +239,6 @@ class Worker:
                 except StopIteration:
                     break
 
-        async def _to_async(func, *args, **kwargs):
-            return await asyncio.to_thread(func, *args, **kwargs)
-
         async def _loop(fn, *args, **kw):
             def _inner():
                 for item in fn(*args, **kw):
@@ -212,15 +249,6 @@ class Worker:
                     yield await asyncio.to_thread(next, _iter)
                 except StopIteration:
                     break
-
-        async def _crop(p, cord, b=None):
-            c    = await _to_async(p.crop, cord)
-            _img = await _to_async(c.to_image, resolution=300)
-            if b is None:
-                b = io.BytesIO()
-            await _to_async(_img.save, b, format="PNG")
-            return b
-
 
         async def extract_region_locality_by_prevent_rotation(_row, _idx, _page):
             return_value = ""
@@ -237,7 +265,39 @@ class Worker:
 
 
         doc = election.doc
-        print("doc", doc)
+        extracted_locality = []
+
+
+        async def _insert_locality_img(l):
+            file = self.vertical_merge_pil_image(l["pil_img"])
+            l.pop("pil_img")
+            l["crop_url"] = await self.election_service.storage.upload(
+                str(election_id), file, "crops/locality/" + uuid.uuid4().hex + ".png",
+                content_type="image/png", public=True, retrieve_url=True
+            )
+
+            extracted_locality.append(l)
+
+
+        async  def _insert_cand_img(_page, _cand):
+            bbox_json = _cand["bbox_json"][0]
+            k = next(iter(bbox_json.keys()))
+            pil_img = [
+                await self._crop(
+                    _page,
+                    bbox_json,
+                    k
+
+                )
+            ]
+            file = self.vertical_merge_pil_image(pil_img)
+            _cand[
+                "crop_url"] = await self.election_service.storage.upload(
+                str(election_id), file, "crops/candidate/" + uuid.uuid4().hex + ".png",
+                content_type="image/png", public=True, retrieve_url=True
+            )
+
+
         async with doc.get() as filename:
 
             page1         = None
@@ -257,10 +317,13 @@ class Worker:
                 "cords":      {},
                 "stage":      {},
                 "candidates": [],
+                "pil_img": [],
+                "crop_url": None
             }
 
             page_index         = -1
-            extracted_locality = []
+
+
 
             async for page in _async_read_pdf(filename):
                 page_index  += 1
@@ -446,14 +509,23 @@ class Worker:
                             # Nouvelle région — fermer la localité courante
                             print("Nouvelle region avec region_sep_crossed")
                             if last_locality["value"] is not None:
-                                _consolidate_bbox(last_locality["cords"],
-                                                  page_index)
-                                extracted_locality.append(last_locality)
+                                _consolidate_bbox(last_locality["cords"], page_index)
+                                last_locality["pil_img"].append(
+                                    await self._crop(
+                                        page,
+                                        last_locality["cords"],
+                                        page_index
+                                    )
+                                )
+                                await _insert_locality_img(last_locality)
+
                             last_locality = {
                                 "value": None,
                                 "cords": {},
                                 "stage": {"region": None},
                                 "candidates": [],
+                                "pil_img": [],
+                                "crop_url": None
                             }
                             last_region = None
 
@@ -461,14 +533,23 @@ class Worker:
                             print("Nouvelle locality avec locality_sep_crossed")
                             # Nouvelle localité — sera confirmée quand locality_raw sera non vide
                             if last_locality["value"] is not None:
-                                _consolidate_bbox(last_locality["cords"],
-                                                  page_index)
-                                extracted_locality.append(last_locality)
+                                _consolidate_bbox(last_locality["cords"], page_index)
+                                last_locality["pil_img"].append(
+                                    await self._crop(
+                                        page,
+                                        last_locality["cords"],
+                                        page_index
+                                    )
+                                )
+                                await _insert_locality_img(last_locality)
+
                             last_locality = {
                                 "value": None,
                                 "cords": {},
                                 "stage": {"region": last_region},
                                 "candidates": [],
+                                "pil_img": [],
+                                "crop_url": None
                             }
                         # ── Skip : aucun contexte actif du tout ──
                         # Lignes de total global en tout début de tableau, avant
@@ -499,7 +580,16 @@ class Worker:
                                     if last_locality["value"] is not None:
                                         print("on ferme la locality:", repr(last_locality["value"][:10]), "...")
                                         _consolidate_bbox(last_locality["cords"], page_index)
-                                        extracted_locality.append(last_locality)
+
+                                        last_locality["pil_img"].append(
+                                            await self._crop(
+                                                page,
+                                                last_locality["cords"],
+                                                page_index
+                                            )
+                                        )
+
+                                        await _insert_locality_img(last_locality)
 
                                     # Réinitialiser last_locality en attente du nom
                                     print("on est sur une nouvelle locality ")
@@ -508,6 +598,8 @@ class Worker:
                                         "cords":      {},
                                         "stage":      {"region": rr},
                                         "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
                                     }
                                 else:
                                     if last_region != rr:
@@ -587,13 +679,24 @@ class Worker:
                                     print("on ferme la locality:",
                                           repr(last_locality["value"][:10]), "...")
                                     _consolidate_bbox(last_locality["cords"], page_index)
-                                    extracted_locality.append(last_locality)
+
+                                    last_locality["pil_img"].append(
+                                        await self._crop(
+                                            page,
+                                            last_locality["cords"],
+                                            page_index
+                                        )
+                                    )
+                                    await _insert_locality_img(last_locality)
+
                                     print("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
                                     last_locality = {
                                         "value":      locality_raw,
                                         "cords":      {page_index: []},
                                         "stage":      {"region": last_region},
                                         "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
                                     }
                                 else:
                                     last_locality["value"] += " " + locality_raw
@@ -645,6 +748,8 @@ class Worker:
                                 )
 
                             cand["bbox_json"] = [{page_index: row_box}]
+
+                            await _insert_cand_img(page, cand)
                             print("\t\tajout du candidat:", str(cand)[:30])
                             last_locality["candidates"].append(cand)
                             status_idx = candidate_results_idx.get("status_idx")
@@ -664,6 +769,7 @@ class Worker:
                                     ),
                                     "bbox_json": [{page_index: row_box}]
                                 }
+                                await _insert_cand_img(page, cand)
                                 if "party_ticker" in c:
                                     cand["party_ticker"] = c["party_ticker"]
                                 print("\t\tajout du candidat:", str(cand)[:30])
@@ -734,8 +840,15 @@ class Worker:
                                                   "...")
                                             _consolidate_bbox(
                                                 last_locality["cords"], page_index)
-                                            extracted_locality.append(
-                                                last_locality)
+
+                                            last_locality["pil_img"].append(
+                                                await self._crop(
+                                                    page,
+                                                    last_locality["cords"],
+                                                    page_index
+                                                )
+                                            )
+                                            await _insert_locality_img(last_locality)
 
                                         # Réinitialiser last_locality en attente du nom
                                         print("on est sur une nouvelle locality ")
@@ -744,6 +857,8 @@ class Worker:
                                             "cords": {},
                                             "stage": {"region": rr},
                                             "candidates": [],
+                                            "pil_img": [],
+                                            "crop_url": None
                                         }
                                     else:
                                         if last_region != rr:
@@ -790,7 +905,16 @@ class Worker:
                                           "...")
                                     _consolidate_bbox(last_locality["cords"],
                                                       page_index)
-                                    extracted_locality.append(last_locality)
+
+                                    last_locality["pil_img"].append(
+                                        await self._crop(
+                                            page,
+                                            last_locality["cords"],
+                                            page_index
+                                        )
+                                    )
+                                    await _insert_locality_img(last_locality)
+
                                     print("on est sur une nouvelle locality",
                                           repr(locality_raw[:10]), "...")
                                     last_locality = {
@@ -798,6 +922,8 @@ class Worker:
                                         "cords": {page_index: []},
                                         "stage": {"region": last_region},
                                         "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
                                     }
 
                             for k, i in idxs.items():
@@ -860,6 +986,7 @@ class Worker:
                                     cand["raw_value"] = raw_value
 
                                 cand["bbox_json"] = [{page_index: row_residual_box_single}]
+                                await _insert_cand_img(page, cand)
 
                                 status_idx = candidate_results_idx.get(
                                     "status_idx")
@@ -889,6 +1016,8 @@ class Worker:
                                         "raw_value": raw_value,
                                         "bbox_json": [{page_index: row_residual_box_single}]
                                     }
+                                    await _insert_cand_img(page, cand)
+
                                     if "party_ticker" in c:
                                         cand["party_ticker"] = c["party_ticker"]
                                     print("\t\tajout du candidat:", str(cand)[:30])
@@ -902,14 +1031,32 @@ class Worker:
                     # On ne ferme PAS last_locality et on ne touche PAS
                     # aux candidates — on consolide uniquement les cords.
                     _consolidate_bbox(last_locality["cords"], page_index)
+                    last_locality["pil_img"].append(
+                        await self._crop(
+                            page,
+                            last_locality["cords"],
+                            page_index
+                        )
+                    )
 
                     # Un seul tableau pertinent par page
                     break
 
             # ── Fin du document : fermer la dernière localité en cours ──
+
+
             if last_locality["value"]:
+
                 _consolidate_bbox(last_locality["cords"], page_index)
-                extracted_locality.append(last_locality)
+                last_locality["pil_img"].append(
+                    await self._crop(
+                        page,
+                        last_locality["cords"],
+                        page_index
+                    )
+                )
+
+                await _insert_locality_img(last_locality)
 
             # ── Émettre une erreur si les colonnes n'ont pas été identifiées ──
             if columns_meta is None:
@@ -930,10 +1077,13 @@ class Worker:
 
                 election.set(type_=columns_meta.get("election_type"), name=name)
                 await election.update()
-
+                await self.election_service.storage.set_public(
+                    str(election_id), "crops"
+                )
                 await self.election_service.add_extracted_archive_data(
                     extracted_locality, election
                 )
+
         return extracted_locality
 
     async def archive_processing(self):
@@ -966,10 +1116,24 @@ class Worker:
 
 
     async def _chat_process(self, election_id, question, room):
+
+        quiz = question
+        options = None
+        if isinstance(question, dict):
+            if question.get("options"):
+                options = question["options"]
+                quiz = "\n".join(
+                    f"[{i+1}] {q['origin']} --> {q['canonic_name']}"
+                    for i, q in enumerate(options)
+                )
+
+            else:
+                quiz = question["question"]
         question_id = await self.election_service.repo.insert_question(
             {
                 "session_id": room,
-                "question": question,
+                "question": quiz,
+                "election_id": election_id,
             }
         )
 
@@ -997,13 +1161,18 @@ class Worker:
 
         res = await self.llm_service.answer(
             election_id=election_id,
-            question=question,
+            question=quiz,
+            options=options,
             session_id=room,
             callback=_callback
         )
         await self.socket.emit(
             "chat_response",
-            res or {"ok": False, "error": "Un problème est survenu..."},
+            res or {
+                "text": "Un problème est survenu...",
+                "display": "TEXT",
+                "error": True
+            },
             room=room
         )
 
@@ -1012,11 +1181,13 @@ class Worker:
             MessageBrokerChannel.CHAT
         ):
 
-            print("on vient de recevoir un messqge de chat")
             data        = message["data"]
             room         = data["room"]
             election_id = data["election_id"]
             question = data["question"]
+
+            print("on vient de recevoir une Question de chat:", question)
+
 
             task = asyncio.create_task(
                 self._chat_process(election_id, question, room)
