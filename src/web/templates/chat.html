@@ -88,7 +88,12 @@
 <!-- Top Navigation Anchor -->
 <nav class="fixed top-0 left-0 w-full h-10 z-50 bg-zinc-950/80 backdrop-blur-xl flex justify-between items-center px-8 border-b border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)]">
     <div class="flex items-center gap-6">
-        back
+        <a href="/" class="text-sm font-medium text-gray-600 hover:text-orange-500 flex items-center transition-colors">
+          <svg xmlns="http://w3.org" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+          Retour
+        </a>
     </div>
 
      <div class="flex items-center gap-6">
@@ -209,14 +214,17 @@
         window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     }
 
-    function addIAResponse(response, elm, has_history=false){
+    function addIAResponse(response, elm, has_history=false, callback=null){
+
+        callback = callback || (()=>{})
+
         if (response.source) {
             renderSource(response.source, elm);
         }
         $(elm).toggleClass("error", response?.error);
         const display = response.display.toLowerCase();
         const rawHtml = marked.parse(response.text);
-        $(elm).find('.text-message')
+        $(elm).find('.text-message').removeClass("hidden")
             .html(rawHtml)
             .hide()
             .fadeIn(400)
@@ -227,10 +235,10 @@
                     $(elm).text().strip()
                 )
             }
-            return;
+            return callback();
         }
         if (display === "text"){
-            return
+            return callback();
         }
         const extraZone = $(
             `<div class="message ai-msg self-start mb-4 flex flex-col items-start max-w-[100%] min-w-[300px] w-full min-h-[300px]">
@@ -261,7 +269,7 @@
                     }
                 );
             }
-            return;
+            return callback();
         }
 
         $(elm).parent().append(extraZone);
@@ -284,6 +292,7 @@
             const chart = createBarChart({ data: d, id: "kb-data-bar-" + $(".kb-data-bar").length, class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between" })
             extraZone.get(0).appendChild(chart);
         }
+        callback();
 
     }
 
@@ -295,79 +304,10 @@
         $currentAiBubble.removeClass("message-pending")
             .find('.typing-indicator').fadeOut(200, function() {
                 $(this).remove();
-                if (response.source) {
-                    renderSource(response.source, $currentAiBubble.get(0));
-                }
-                const display = response.display.toLowerCase();
-                const rawHtml = marked.parse(response.text);
-                $currentAiBubble.find('.text-message')
-                    .html(rawHtml)
-                    .hide()
-                    .fadeIn(400)
-                ;
 
-                if (response.error){
-                    $("#form-chat").find("input").val(
-                        $currentAiBubble.prev().text().strip()
-                    )
-                    return;
-                }
-
-                if (display === "text"){
-                    return
-                }
-
-                const extraZone = $(
-                    `<div class="message ai-msg self-start mb-4 flex flex-col items-start max-w-[100%] min-w-[300px] w-full min-h-[300px]">
-                    </div>`
-                )
-
-                if (display === "options"){
-                    blockTyping();
-                    renderClarification(
-                        response.options,
-                        $currentAiBubble.get(0),
-                        (resolved) => {
-                            console.log(resolved);
-                            // resolved = [{tool_id, origin, category, id, canonic_name}, ...]
-                            deblockTyping();
-                            $("#form-chat").find("input").val(
-                                resolved.map((r, i)=>{
-                                    return `[${i+1}] ${r.origin} --> ${r.canonic_name}`
-                                }).join("\n")
-                            )
-                            $("#form-chat").attr("data-options", JSON.stringify({"options": resolved}))
-                                .submit()
-                            ;
-
-                        },
-                        ()=>{
-                            deblockTyping();
-                        }
-                    );
-                    return;
-                }
-
-                $currentAiBubble.parent().append(extraZone);
-                const d = response["data"];
-                if (display === "table"){
-                    d["title"] = d["title"] || "Table";
-                    d["class_"] = "kb-data-table push-up";
-
-                    extraZone.html(createDataCard(d));
-                }else if (display === "pie"){
-                    const chart = createPieChart({
-                        data: d,
-                        id: "kb-data-pie-" + $(".kb-data-pie").length,
-                        class_: "kb-data-pie push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between"
-                    });
-                    extraZone.get(0).appendChild(chart);
-
-                }else if (display === "bar"){
-                    const chart = createBarChart({ data: d, id: "kb-data-bar-" + $(".kb-data-bar").length, class_: "kb-data-bar push-up group glass-card p-5 rounded-xl border border-white/5 hover:border-orange-500/30 transition-all duration-500 h-full flex flex-col justify-between" })
-                    extraZone.get(0).appendChild(chart);
-                }
-                scrollToBottom();
+                addIAResponse(response, $currentAiBubble.get(0), false, ()=>{
+                    scrollToBottom();
+                })
 
             });
     });
@@ -430,12 +370,6 @@
 
     })
     $(document).ready(()=>{
-
-        fetch(config_app.api_base + "/chat/history/{{ id_ }}").then((response)=>response.json()).then(data=>{
-             console.log(data);
-
-        })
-
         fetch(config_app.api_base + "/chat/base-stat/{{ id_ }}").then((response)=>{
             return response.json()
         }).then((data)=>{
@@ -444,7 +378,7 @@
             $("#archive-name").text(data.election.type + " " + data.election.name);
             $(".shimmer-container").hide();
             $(".data-container").removeClass("hidden");
-            if (data.charts){
+            if (data.charts.length){
                 $("#example-text").fadeIn(300);
 
                 data.charts.forEach(([type, d])=>{
@@ -466,25 +400,33 @@
             }else{
                 $("#main-vue").hide().next().removeClass("hidden");
                 data.history.forEach((quiz)=>{
+                    console.log(quiz);
                     let $bulle = $(`
-                        <div class="message self-end mb-2 p-3 bg-[#eeeeee22] text-white rounded-2xl rounded-tr-none
+                        <div class="history-message message self-end mb-2 p-3 bg-[#eeeeee22] text-white rounded-2xl rounded-tr-none
                                     transform transition-all duration-300 ease-out opacity-0 translate-y-4">
                             ${quiz.question}
                         </div>
                     `);
                     $('#chat-box').append($bulle);
-                    let $aiResponse = $(`
-                        <div class="message-pending message ai-msg self-start mb-4 flex flex-col items-start max-w-[85%]">
+                    let $currentAiBubble = $(`
+                        <div class=" history-message message ai-msg self-start mb-4 flex flex-col items-start max-w-[85%]">
                             <div class="content prose prose-invert prose-p:leading-relaxed prose-pre:p-0 p-4 bg-[#2f2f2f] text-gray-100 rounded-2xl rounded-tl-none border border-white/5
                                         transform transition-all duration-300 opacity-0 translate-y-4">
-                                <div class="text-message hidden"></div>
+                                <div class="text-message"></div>
                             </div>
                         </div>
                     `);
 
-                    $('#chat-box').append($aiResponse);
+                    $('#chat-box').append($currentAiBubble);
+
+                    addIAResponse(quiz.answer, $currentAiBubble.get(0), true)
 
                 })
+
+                setTimeout(() => {
+                    $(".history-message").removeClass('opacity-0 translate-y-4').addClass('opacity-100 translate-y-0').find('.content').removeClass('opacity-0 translate-y-4').addClass('opacity-100 translate-y-0');
+                    scrollToBottom();
+                }, 50);
 
             }
         });
