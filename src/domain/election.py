@@ -1,9 +1,16 @@
 import enum
+import json
+import re
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 
-from typing import Callable, Awaitable, Optional, AsyncGenerator
+from typing import Callable, Awaitable, Optional, AsyncGenerator, Literal
+
+from src.utils.tools import value_parser
+
+
+ELECTION_TYPE = Literal["legislative", "presidential", "municipal", "regional"]
 
 
 @dataclass
@@ -19,6 +26,19 @@ class Election:
 
     doc: "Document"                       = field(init=False)
 
+    @property
+    def is_national(self):
+        return self.type in ("presidential",)
+
+    def set(self, *, type_: str=None, name: str=None):
+        self.type = type_ or self.type
+        self.name = name or self.name
+        if self.name:
+            part = re.split(r"l?'?\b[eé]lection", self.name, flags=re.I)[0].strip()
+            year = re.search(r"\d{4}", self.name)
+            if year:
+                self.name = (part + " " + year.group()).strip()
+
     def to_dict(self) -> dict:
         d = {
             "name": self.name,
@@ -28,6 +48,12 @@ class Election:
         if hasattr(self, "id"):
             d["id"] = str(self.id)
         return d
+
+    def __repr__(self):
+        extra = ""
+        if hasattr(self, "id"):
+            extra += "id=" + str(self.id) + " "
+        return "<Election {}{}>".format(extra, self.name)
 
 
 class DocumentType(enum.Enum):
@@ -73,6 +99,121 @@ class Document:
         if self.uploaded_at:
             d["uploaded_at"] = self.uploaded_at
         return d
+
+    def __repr__(self):
+        return "<Document {}>".format(self.file_name)
+
+
+def int_parser(value):
+    if isinstance(value, int):
+        return value
+    return int(float(re.sub(r"\s", "", value)))
+
+
+def percent_parser(value):
+    value = str(value).replace(",", ".").replace("%", "")
+    value = float(re.sub(r"\s", "", value))
+    return value / 100
+
+
+@dataclass
+class LocalityStagingResult:
+    election_id: uuid.UUID
+
+    circonscription_id: int
+
+    registered_voters_total: int
+    voters_total: int
+    expressed_votes: int
+
+    # candidates: List[CandidateStagingResult] = field(init=False)
+
+    polling_stations_count: Optional[int] = None
+    on_call_staff: Optional[int] = None
+
+    pop_size_male: Optional[int] = None
+    pop_size_female: Optional[int] = None
+    pop_size: Optional[int] = None
+
+    registered_voters_male: Optional[int] = None
+    registered_voters_female: Optional[int] = None
+
+    voters_male: Optional[int] = None
+    voters_female: Optional[int] = None
+
+    participation_rate: Optional[float] = None
+
+    null_ballots: Optional[int] = None
+
+    blank_ballots_pct: Optional[float] = None
+    blank_ballots_count: Optional[int] = None
+
+    unregistered_voters_count: Optional[int] = None
+
+    validated_by: Optional[uuid.UUID] = None
+
+    validation_status: str = "PENDING"
+
+
+    validated_at: Optional[datetime] = None
+    created_at: datetime = field(init=False)
+
+    id: int = field(init=False)
+
+    def __post_init__(self):
+        assert self.circonscription_id
+
+        self.registered_voters_total = value_parser(int_parser, self.registered_voters_total)
+        self.voters_total = value_parser(int_parser, self.voters_total)
+        self.expressed_votes = value_parser(int_parser, self.expressed_votes)
+
+        self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
+        self.on_call_staff = value_parser(int_parser, self.on_call_staff, None)
+
+        self.pop_size_male = value_parser(int_parser, self.pop_size_male, None)
+        self.pop_size_female = value_parser(int_parser, self.pop_size_female, None)
+        self.pop_size = value_parser(int_parser, self.pop_size, None)
+
+        self.registered_voters_male = value_parser(int_parser, self.registered_voters_male, None)
+        self.registered_voters_female = value_parser(int_parser, self.registered_voters_female, None)
+
+        self.voters_male = value_parser(int_parser, self.voters_male, None)
+        self.voters_female = value_parser(int_parser, self.voters_female, None)
+
+        self.participation_rate = value_parser(percent_parser, self.participation_rate, None)
+
+        self.null_ballots = value_parser(int_parser, self.null_ballots, None)
+
+        self.blank_ballots_pct = value_parser(percent_parser, self.blank_ballots_pct, None)
+        self.blank_ballots_count = value_parser(int_parser, self.blank_ballots_count, None)
+
+        self.unregistered_voters_count = value_parser(int_parser, self.unregistered_voters_count, None)
+
+        self.polling_stations_count = value_parser(int_parser, self.polling_stations_count, None)
+
+    def to_dict(self):
+        d = {}
+        for k in self.__annotations__:
+            if k not in ("id", "created_at"):
+                v = getattr(self, k)
+                if v is not None:
+                    d[k] = v
+        if getattr(self, "id", None) is not None:
+            d["id"] = self.id
+
+        if getattr(self, "created_at", None) is not None:
+            d["created_at"] = self.created_at
+        return d
+
+
+
+
+
+
+
+
+
+
 
 
 

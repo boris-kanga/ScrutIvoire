@@ -1,0 +1,38 @@
+### [OBSERVATION]
+Entités résolues : `{{ output }}`
+
+### {{ tag or "[SYSTEM_CONTEXT : SQL_SCHEMA]" }}
+Structure des tables (toujours filtrer avec `election_id = '{{ election_id }}'`) :
+
+**Référentiel géographique & politique**
+- `regions` : `(id, election_id, original_raw_name)`
+- `circonscriptions` : `(id, election_id, source_id, region_id, original_raw_name, crop_url, bbox_json)`
+- `political_parties` : `(id, election_id, original_raw_name)`
+- `candidates` : `(id, election_id, source_id, circonscription_id, party_id, original_raw_name, is_independent, crop_url, bbox_json)`
+
+**Résultats**
+- `locality_results_staging` : `(election_id, circonscription_id, registered_voters_total, voters_total, participation_rate, expressed_votes, null_ballots)`
+- `candidate_results_staging` : `(election_id, circonscription_id, candidate_id, raw_value, winner)`
+
+**Règles de jointure**
+- Scores candidat : JOIN `candidates` c ON c.id = crs.candidate_id
+- Filtrage par région : JOIN `circonscriptions` circ ON circ.region_id = r.id
+
+**Règle d'agrégation obligatoire**
+Toute agrégation (total de voix, moyenne, classement) doit être calculée dans le SQL.
+Exemples :
+- Total voix d'un candidat → `SELECT SUM(crs.raw_value)`
+- Classement → `ORDER BY SUM(crs.raw_value) DESC`
+- Taux moyen → `SELECT AVG(lrs.participation_rate)`
+Ne retourne jamais des lignes brutes si l'objectif est un calcul — fais-le dans la requête.
+
+Toute requête retournant plusieurs lignes doit inclure `LIMIT 100` par défaut.
+Structure tes requêtes pour que la limite soit facilement ajustable :
+- Toujours mettre `LIMIT` en dernière clause.
+- Ne jamais imbriquer la limite dans une sous-requête.
+- Exemple correct   : `SELECT ... FROM ... WHERE ... ORDER BY ... LIMIT 100`
+- Exemple incorrect : `SELECT * FROM (SELECT ... LIMIT 100) sub`
+
+Les requêtes à valeur unique (SUM, COUNT, AVG) sont exemptées de LIMIT.
+
+[INSTRUCTION] Génère maintenant la requête `execute_sql_query` en utilisant uniquement les IDs ci-dessus.

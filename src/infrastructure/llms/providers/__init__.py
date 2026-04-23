@@ -28,7 +28,7 @@ class LLMProvider(ABC):
 def providers():
     data = {"main": [], "fast": [], "large": []}
     for f in os.listdir(os.path.dirname(__file__)):
-        if f != "__init__.py" and f.endswith(".py"):
+        if not f.startswith("_") and f.endswith(".py"):
             f = os.path.join(os.path.dirname(__file__), f)
             try:
                 with (load_module(f) as mod):

@@ -13,5 +13,9 @@ def is_persistance_channel(channel: str):
 class MessageBrokerChannel:
     CURRENT_ELECTION = "election:current"
 
-    PROCESSING_ELECTION_RAPPORT = "election:persistante:rapport_processing"
+    PROCESSING_ELECTION_RAPPORT = "election:rapport_processing"
+    CANCEL_ELECTION_PROCESS = "election:rapport_processing:cancel"
+
+    CHAT = "chat"
+    CANCEL_CHAT = "chat:cancel"
 

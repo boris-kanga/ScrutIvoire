@@ -1,13 +1,19 @@
-import os
+import asyncio
+
 import click
 
 from src.domain.user import User, Role
-from src.web import db_depends
 
 
 @click.group()
 def cli():
     pass
+
+@cli.command(help="Run the background worker")
+def worker():
+    from src.worker import Worker
+
+    asyncio.run(Worker().run())
 
 
 @cli.command(help="Start web app")
@@ -16,7 +22,6 @@ def web():
     from src.infrastructure.database.pgdb import PgDB
     from src.repository.user_repo import UserRepo
 
-    import asyncio
 
     from hypercorn.config import Config
     from hypercorn.asyncio import serve

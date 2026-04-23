@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+{% from "macros_admin.html" import nav %}
+{% from "macros_admin.html" import autoDisconnect %}
+
+{% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
+
+
+{% block title %}Monitoring{% endblock %}
+{% block content %}
+{{ autoDisconnect() }}
+
+<style>
+    body { font-family: 'Inter', sans-serif; }
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+</style>
+<style>
+:root {
+    --orange: #C0390B;
+    --orange-light: #F5EDE9;
+    --orange-mid: #E8A088;
+    --bg: #F7F6F3;
+    --surface: #FFFFFF;
+    --border: #E8E6E0;
+    --text: #1A1916;
+    --muted: #7A7870;
+    --green: #1D9E75;
+    --green-bg: #E1F5EE;
+    --red: #C0390B;
+    --red-bg: #F5EDE9;
+    --amber: #B87A10;
+    --amber-bg: #FDF3DC;
+    --blue: #1A5FA5;
+    --blue-bg: #E6F0FB;
+    --sidebar: 240px;
+}
+
+.election-select {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A7870' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+.breadcrumb{
+    color: #aaa;font-size:0.7rem;
+}
+
+/* CONTENT */
+.content {
+    width: 100%;
+    max-width: 1400px;
+    padding: 16px 0;
+}
+@media (min-width: 640px) {
+    .content { padding: 24px 0; }
+}
+
+.page-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+
+/* METRICS */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+@media (min-width: 1024px) {
+    .metrics-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+.metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.metric-value { font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
+.metric-sub   { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.metric-card.accent { background: var(--orange); border-color: var(--orange); }
+.metric-card.accent .metric-label { color: rgba(255,255,255,.7); }
+.metric-card.accent .metric-value { color: #fff; }
+.metric-card.accent .metric-sub   { color: rgba(255,255,255,.6); }
+
+/* TABLE */
+/* TABLE — scroll horizontal sur mobile */
+.table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Cacher certaines colonnes sur mobile */
+@media (max-width: 768px) {
+    .col-tokens,
+    .col-display,
+    .col-status  { display: none; }
+
+    .question-text { max-width: 160px; }
+
+    .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .search-input { width: 100%; }
+
+    .metric-value { font-size: 22px; }
+}
+
+.table-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.table-title { font-size: 14px; font-weight: 500; }
+
+.search-input {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    width: 220px;
+}
+.search-input:focus { border-color: var(--orange); }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    padding: 10px 16px;
+    text-align: left;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+tbody tr {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .1s;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: #FAFAF8; }
+tbody td { padding: 13px 16px; font-size: 13px; vertical-align: middle; }
+
+.question-text {
+    font-size: 13px;
+    color: var(--text);
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* BADGES */
+.badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 500;
+    padding: 3px 8px; border-radius: 20px;
+}
+.badge-green  { background: var(--green-bg);  color: var(--green); }
+.badge-red    { background: var(--red-bg);    color: var(--red); }
+.badge-amber  { background: var(--amber-bg);  color: var(--amber); }
+.badge-blue   { background: var(--blue-bg);   color: var(--blue); }
+.badge-gray   { background: var(--bg);        color: var(--muted); border: 1px solid var(--border); }
+
+/* TOOLS FLOW */
+.tools-flow { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.tool-chip {
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    white-space: nowrap;
+}
+.tool-chip.fuzzy { background: var(--blue-bg);  color: var(--blue);  border-color: #B5D4F4; }
+.tool-chip.sql   { background: var(--green-bg); color: var(--green); border-color: #9FE1CB; }
+.tool-chip.sql.err { background: var(--red-bg); color: var(--red); border-color: var(--orange-mid); }
+.tool-arrow { font-size: 10px; color: var(--muted); }
+
+/* LATENCY BAR */
+.latency-wrap { display: flex; align-items: center; gap: 8px; }
+.latency-bar-bg { width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.latency-bar-fill { height: 100%; border-radius: 2px; background: var(--orange); }
+.latency-val { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--muted); min-width: 36px; }
+
+/* DETAIL PANEL */
+.detail-panel {
+    display: none;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 20px;
+    animation: slideDown .15s ease;
+}
+.detail-panel.open { display: block; }
+
+@keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+.detail-section-title {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin-bottom: 10px;
+}
+
+.trace-list { display: flex; flex-direction: column; gap: 6px; }
+
+.trace-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+}
+.trace-idx {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; color: var(--muted);
+}
+.trace-idx.ok  { background: var(--green-bg); border-color: #9FE1CB; color: var(--green); }
+.trace-idx.err { background: var(--red-bg);   border-color: var(--orange-mid); color: var(--red); }
+
+.trace-body { flex: 1; min-width: 0; }
+.trace-name { font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.trace-detail {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 380px;
+}
+.trace-detail.err-text { color: var(--red); }
+
+.stats-list { display: flex; flex-direction: column; gap: 8px; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.stat-key { color: var(--muted); }
+.stat-val { font-weight: 500; font-family: 'DM Mono', monospace; font-size: 12px; }
+
+/* PAGINATION */
+.pagination {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.page-btns { display: flex; gap: 4px; }
+.page-btn {
+    width: 28px; height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 12px; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all .1s;
+}
+.page-btn:hover { background: var(--bg); }
+.page-btn.active { background: var(--orange); color: #fff; border-color: var(--orange); }
+</style>
+<input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
+{{ nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="monitoring") }}
+
+<header class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
+    <div class="flex items-center gap-4 flex-1">
+        <label class="lg:hidden text-slate-600 cursor-pointer p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+               for="mobile-menu-toggle">
+            <span class="material-symbols-outlined">menu</span>
+        </label>
+        <div class="relative w-full max-w-xs hidden sm:block">
+            <span class="breadcrumb">Admin / <span>Monitoring</span></span>
+
+        </div>
+    </div>
+    <div class="flex items-center gap-3 lg:gap-6">
+        <select class="election-select" id="election-select" onchange="loadData()">
+            <option value="">Toutes les élections</option>
+        </select>
+    </div>
+</header>
+
+<!-- MAIN -->
+<main class="main lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center relative overflow-hidden">
+    <div class="absolute inset-0 -z-10 opacity-5 pointer-events-none">
+        <img alt="Background Texture" class="w-full h-full object-cover"
+             src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoAxSnvETD2D2VprXxOb6ntRaNmAYXePoQ4fNVqqb6TCsn8kPImSjKuPUgUGb5pwbkicKpy1luMpnlNKOUxjcJ9tT5agCVal2gveE8RFNDfHVsmC_XHArIjyA-HmIDN9tgzKp-Ne5XFaxZSsL6zMVDxPP-SpYZdpKf-d70P7x_NT39a8F-zgZkZyH-2GqFXmvpwog8CWInTg22OSHP3C4MTbdTje-y4i3C1oT1rROmnGXjmtG17M--HV9kfvql9wz-R7d9FekC89f_"/>
+    </div>
+
+    <div class="content">
+        <div class="page-title">Monitoring des requêtes</div>
+        <div class="page-sub">Trace end-to-end de chaque question posée à l'agent</div>
+
+        <div class="metrics-grid" id="metrics"></div>
+
+        <div class="table-wrap">
+    <div class="table-header">
+        <div class="table-title">Historique des requêtes</div>
+        <input class="search-input" type="text"
+               placeholder="Rechercher une question..."
+               id="search-input" oninput="filterRows()">
+    </div>
+
+    <div class="table-scroll">  {# ← wrapper scroll #}
+        <table id="main-table">
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Flux outils</th>
+                    <th class="col-tokens">SQL</th>
+                    <th class="col-display">Display</th>
+                    <th class="col-tokens">Tokens</th>
+                    <th>Latence</th>
+                    <th class="col-status">Statut</th>
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+</div>
+    </div>
+</main>
+ {% endblock %}
+
+
+{% block script %}
+<script>
+
+function parseSession(s) {
+    let meta = { messages: [] };
+    try { meta = JSON.parse(s.answer_meta); } catch(e) {}
+
+    const messages = meta.messages || [];
+    const toolCalls = [];
+
+    messages.forEach(msg => {
+        if (msg.role === 'tool') {
+            const prev = messages[messages.indexOf(msg) - 1];
+            const toolName = prev?.tool_calls?.[0]?.function?.name || 'unknown';
+            let output = null;
+
+            try {
+                output = JSON.parse(msg.content);
+                if (toolName === "fuzzy_wuzzy"){
+                    const regx = /bestentity.+?canonic_name=(.*?),\s*score=(\d+)/gi
+                    let match;
+                    const best = []
+                    while ((match = regx.exec(output)) !== null) {
+                        const canonic_name = match[1];
+                        best.push({
+                            score: match[2],
+                            canonic_name: canonic_name.slice(1, canonic_name.length-1)
+                        });
+                    }
+                    output = best;
+                }
+            } catch(e) {
+                output = output || msg.content;
+            }
+            toolCalls.push({ name: toolName, output });
+        }
+    });
+
+    // Latence
+    const t0  = new Date(s.ask_time);
+    const t1  = new Date(s.answer_time);
+    const lat = Math.round((t1 - t0) / 1000);
+
+    let display = '—';
+    try { display = JSON.parse(s.answer).display || '—'; } catch(e) {}
+
+    const tokenInfo = {
+        total: (meta.meta?.completion_tokens || 0) + (meta.meta?.prompt_tokens || 0),
+        completion_tokens: meta.meta?.completion_tokens || null,
+        prompt_tokens: meta.meta?.prompt_tokens || null
+    };
+
+    console.log(tokenInfo, meta)
+
+    // SQL errors
+    const sqlErrors = toolCalls.filter(tc => tc.name === 'execute_sql_query' && tc.output?.ok === false).length;
+    const sqlOk     = toolCalls.filter(tc => tc.name === 'execute_sql_query' && tc.output?.ok === true).length;
+
+    return { ...s, toolCalls, latency: lat, display, tokenInfo, sqlErrors, sqlOk };
+}
+
+
+function renderMetrics(sessions) {
+    const total    = sessions.length;
+    const avgLat   = sessions.length ? Math.round(sessions.reduce((a, s) => a + s.latency, 0) / sessions.length) : 0;
+    const sqlErrors = sessions.reduce((a, s) => a + s.sqlErrors, 0);
+    const chatOnly  = sessions.filter(s => s.toolCalls.length === 0).length;
+
+    const el = document.getElementById('metrics');
+    el.innerHTML = `
+        <div class="metric-card accent">
+            <div class="metric-label">Requêtes totales</div>
+            <div class="metric-value">${total}</div>
+            <div class="metric-sub">Toutes sessions confondues</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Latence moyenne</div>
+            <div class="metric-value">${avgLat}s</div>
+            <div class="metric-sub">De la question à la réponse</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Erreurs SQL</div>
+            <div class="metric-value">${sqlErrors}</div>
+            <div class="metric-sub">Tentatives échouées (corrigées)</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Chit-chat</div>
+            <div class="metric-value">${chatOnly}</div>
+            <div class="metric-sub">Sans appel d'outil</div>
+        </div>
+    `;
+}
+
+
+let allRows = [];
+let openRow = null;
+const PAGE_SIZE = 20;
+let currentPage = 1;
+
+function renderToolFlow(toolCalls) {
+    if (!toolCalls.length) return '<span style="color:var(--muted);font-size:11px">—</span>';
+    const html = [];
+    toolCalls.forEach((tc, i) => {
+        if (i > 0) html.push('<span class="tool-arrow">›</span>');
+        const cls = tc.name === 'fuzzy_wuzzy' ? 'fuzzy'
+                  : tc.name === 'execute_sql_query' ? (tc.output?.ok === false ? 'sql err' : 'sql')
+                  : '';
+        const label = tc.name === 'fuzzy_wuzzy'      ? 'fuzzy'
+                    : tc.name === 'execute_sql_query' ? 'sql'
+                    : tc.name;
+        html.push(`<span class="tool-chip ${cls}">${label}</span>`);
+    });
+    return `<div class="tools-flow">${html.join('')}</div>`;
+}
+
+function renderLatency(lat, maxLat) {
+    const pct = Math.min(100, Math.round((lat / maxLat) * 100));
+    const color = lat > 15 ? 'var(--red)' : lat > 8 ? 'var(--amber)' : 'var(--green)';
+    return `
+        <div class="latency-wrap">
+            <div class="latency-bar-bg">
+                <div class="latency-bar-fill" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <span class="latency-val">${lat}s</span>
+        </div>`;
+}
+
+function renderDisplayBadge(display) {
+    const map = {
+        TABLE: 'badge-blue',
+        BAR:   'badge-amber',
+        PIE:   'badge-green',
+        TEXT:  'badge-gray',
+    };
+    return `<span class="badge ${map[display] || 'badge-gray'}">${display}</span>`;
+}
+
+function renderSQLBadge(s) {
+    if (s.sqlErrors === 0 && s.sqlOk === 0) return '<span style="color:var(--muted);font-size:11px">—</span>';
+    if (s.sqlErrors === 0) return `<span class="badge badge-green">✓ OK</span>`;
+    return `<span class="badge badge-red">✗ ${s.sqlErrors} err</span>`;
+}
+
+function renderDetailPanel(s) {
+    const traceHtml = s.toolCalls.map((tc, i) => {
+        console.log(tc)
+        const isOk = tc.name !== 'execute_sql_query' || tc.output?.ok !== false;
+        const detail = tc.name === 'fuzzy_wuzzy'
+            ? (() => {
+                if (!tc.output || tc.output === 'Not Found') return 'Not Found';
+                const items = Array.isArray(tc.output) ? tc.output : [tc.output];
+                return items.map(e =>
+                    `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;
+                                  padding:2px 7px;border-radius:20px;margin-right:3px;
+                                  background:#E1F5EE;color:#0F6E56;border:0.5px solid #9FE1CB">
+                        ${e.canonic_name}
+                        <i style="opacity:.6; font-">${e.score? e.score +"%": ''}</i>
+                     </span>`
+                ).join('');
+            })()
+            : tc.name === 'execute_sql_query'
+            ? (tc.output?.ok === false
+                ? tc.output.error
+                : `✓ ${Array.isArray(tc.output?.result) ? tc.output.result.length + ' lignes' : 'OK'}`)
+            : JSON.stringify(tc.output)?.slice(0, 80);
+
+        const query = tc.name === 'execute_sql_query' && tc.output?.query
+            ? `<div class="trace-detail" style="margin-top:3px;font-size:10px;opacity:.7">${tc.output.query.slice(0, 120)}${tc.output.query.length > 120 ? '…' : ''}</div>`
+            : '';
+
+        return `
+            <div class="trace-item">
+                <div class="trace-idx ${isOk ? 'ok' : 'err'}">${i+1}</div>
+                <div class="trace-body">
+                    <div class="trace-name">${tc.name}</div>
+                    <div class="trace-detail ${isOk ? '' : 'err-text'}" style="white-space:normal">${detail}</div>
+                    ${query}
+                </div>
+            </div>`;
+    }).join('');
+
+    const noTools = !s.toolCalls.length
+        ? '<div style="font-size:12px;color:var(--muted);padding:8px 0">Réponse directe — aucun outil appelé</div>'
+        : traceHtml;
+
+    const fmt = (d) => new Date(d).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' });
+
+    return `
+        <div class="detail-grid">
+            <div>
+                <div class="detail-section-title">Trace des outils</div>
+                <div class="trace-list">${noTools}</div>
+            </div>
+            <div>
+                <div class="detail-section-title">Métriques</div>
+                <div class="stats-list">
+                    <div class="stat-row">
+                        <span class="stat-key">Heure de la question</span>
+                        <span class="stat-val">${fmt(s.ask_time)}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Latence totale</span>
+                        <span class="stat-val">${s.latency}s</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Appels d'outils</span>
+                        <span class="stat-val">${s.toolCalls.length}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Erreurs SQL</span>
+                        <span class="stat-val" style="color:${s.sqlErrors ? 'var(--red)' : 'var(--green)'}">
+                            ${s.sqlErrors ? s.sqlErrors + ' erreur(s)' : 'Aucune'}
+                        </span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Format réponse</span>
+                        <span class="stat-val">${s.display}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Statut</span>
+                        <span class="stat-val">${s.status}</span>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderTable(sessions) {
+    const maxLat = Math.max(...sessions.map(s => s.latency), 1);
+    const tbody  = document.getElementById('table-body');
+    tbody.innerHTML = '';
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const page  = sessions.slice(start, start + PAGE_SIZE);
+
+    page.forEach(s => {
+        // Row
+        const tr = document.createElement('tr');
+        console.log(s);
+        tr.dataset.id = s.id;
+        tr.innerHTML = `
+            <td><div class="question-text" title="${s.question}">${s.question}</div></td>
+            <td>${renderToolFlow(s.toolCalls)}</td>
+            <td class="col-tokens">${renderSQLBadge(s)}</td>
+            <td class="col-display">${renderDisplayBadge(s.display)}</td>
+            <td class="col-tokens">
+                <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">
+                    ${s.tokenInfo.total ? s.tokenInfo.total.toLocaleString() + ' tok' : '—'}
+                </span>
+            </td>
+            <td>${renderLatency(s.latency, maxLat)}</td>
+            <td class="col-status"><span class="badge badge-green">✓ DONE</span></td>
+        `;
+
+
+        // Detail row
+        const detailTr = document.createElement('tr');
+        detailTr.dataset.detail = s.id;
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 7;
+        detailTd.style.padding = '0';
+
+        const panel = document.createElement('div');
+        panel.className = 'detail-panel';
+        panel.innerHTML = renderDetailPanel(s);
+        detailTd.appendChild(panel);
+        detailTr.appendChild(detailTd);
+
+        tr.addEventListener('click', () => {
+            const isOpen = panel.classList.contains('open');
+            // Fermer tous
+            document.querySelectorAll('.detail-panel.open').forEach(p => p.classList.remove('open'));
+            if (!isOpen) panel.classList.add('open');
+        });
+
+        tbody.appendChild(tr);
+        tbody.appendChild(detailTr);
+    });
+
+    renderPagination(sessions.length);
+}
+
+function renderPagination(total) {
+    const pages = Math.ceil(total / PAGE_SIZE);
+    const el    = document.getElementById('pagination');
+    if (pages <= 1) { el.innerHTML = ''; return; }
+
+    let btns = '';
+    for (let i = 1; i <= pages; i++) {
+        btns += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+    }
+    const start = (currentPage - 1) * PAGE_SIZE + 1;
+    const end   = Math.min(currentPage * PAGE_SIZE, total);
+    el.innerHTML = `<span>${start}–${end} sur ${total}</span><div class="page-btns">${btns}</div>`;
+}
+
+function goPage(n) {
+    currentPage = n;
+    renderTable(allRows);
+}
+
+// ------------------------------------------------------------------ //
+//  FILTER                                                             //
+// ------------------------------------------------------------------ //
+
+function filterRows() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allRows.filter(s => s.question.toLowerCase().includes(q));
+    currentPage = 1;
+    renderTable(filtered);
+}
+
+async function loadData() {
+    const electionId = document.getElementById('election-select').value;
+    const res = await fetch(config_app.api_base + `/election/monitoring?election_id=${electionId}`);
+    const data = await res.json();
+    allRows = data.map(parseSession);
+    console.log(allRows)
+
+
+    currentPage = 1;
+    renderMetrics(allRows);
+    renderTable(allRows);
+}
+
+$(document).ready(async()=>{
+    const data = await fetch(config_app.api_base + "/stat")
+    const res = await data.json();
+    res.elections.forEach(el=>{
+        $("#election-select").append(
+            $("<option>").attr("value", el.id).text(el.type + " " + el.name)
+        )
+    })
+
+    await loadData();
+})
+
+</script>
+{% endblock %}

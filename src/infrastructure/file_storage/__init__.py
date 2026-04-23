@@ -30,3 +30,9 @@ class FileStorageProtocol(Protocol):
     async def get_presigned_url(self, bucket, remote_name, expires=3600):
         """Génère un lien temporaire pour accéder au fichier via navigateur."""
         pass
+
+    async def delete_bucket(self, bucket_name):
+        pass
+
+    async def delete_all_storage(self):
+        pass

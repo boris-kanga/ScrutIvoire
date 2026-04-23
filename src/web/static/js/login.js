@@ -39,6 +39,8 @@ $("#login").submit((e)=>{
 
 
 $(document).ready(()=>{
-
+    if (localStorage.getItem("access_token")){
+        location.href = "/Administration";
+    }
 
 });

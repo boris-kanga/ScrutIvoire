@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% from "macros.html" import logo %}
+
+
+{% block title %}Accueil{% endblock %}
+
+{% block content %}
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-header {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+    }
+    .asymmetric-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+    }
+    .hero-gradient-text {
+        background: linear-gradient(to right, #954a00, #ff8200);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    .shimmer-bg {
+        background: linear-gradient(90deg, #e0e3e5 25%, #f7fafc 50%, #e0e3e5 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite linear;
+    }
+    .shimmer-dark {
+        background: linear-gradient(90deg, #333 25%, #444 50%, #333 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite linear;
+    }
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+</style>
+<body class="bg-background text-on-background font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<template id="election-card">
+    <div class="group bg-[#222222] p-10 rounded-xl transition-all duration-500 hover:-translate-y-[10px] hover:shadow-[0_40px_80px_-15px_rgba(0,0,0,0.4)] flex flex-col justify-between h-[480px]">
+            <div>
+                <span class="text-label-sm uppercase tracking-[0.15em] text-slate-400 font-semibold mb-4 block election-card-type">PRESIDENTIEL</span>
+                <div class="text-[6rem] font-black text-white leading-none tracking-tighter opacity-90 election-card-name">
+                    2020
+                </div>
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-10 text-white/80">
+                    <div class="flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-primary-container"
+                              style="font-variation-settings: 'FILL' 1;">event_seat</span>
+                        <span class="text-xs font-bold uppercase tracking-widest election-card-seat">1 Seat</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-primary-container"
+                              style="font-variation-settings: 'FILL' 1;">groups</span>
+                        <span class="text-xs font-bold uppercase tracking-widest election-card-voters">7.5M Voters</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-primary-container"
+                              style="font-variation-settings: 'FILL' 1;">analytics</span>
+                        <span class="text-xs font-bold uppercase tracking-widest election-card-part">53% Part.</span>
+                    </div>
+                </div>
+                <button role="link" class="w-full py-4 border-2 border-primary-container text-primary-container font-bold rounded-lg transition-all duration-300 hover:bg-primary-container hover:text-on-primary election-card-link">
+                    Interroger l'Archive
+                </button>
+            </div>
+        </div>
+</template>
+<header class="shimmer-container fixed top-0 left-0 right-0 z-50 flex justify-between items-center px-8 py-4 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl mt-4 mx-auto w-[95%] max-w-7xl shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+    <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg shimmer-bg"></div>
+        <div class="w-32 h-6 rounded-md shimmer-bg"></div>
+    </div>
+    <nav class="hidden md:flex gap-8 items-center">
+        <div class="w-20 h-4 rounded-sm shimmer-bg"></div>
+        <div class="w-20 h-4 rounded-sm shimmer-bg"></div>
+        <div class="w-20 h-4 rounded-sm shimmer-bg"></div>
+    </nav>
+    <div class="flex items-center gap-4">
+        <div class="w-8 h-8 rounded-full shimmer-bg"></div>
+        <div class="w-24 h-10 rounded-xl shimmer-bg"></div>
+    </div>
+</header>
+
+<header class="data-container hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-full mt-4 mx-auto max-w-7xl px-6 py-2 shadow-2xl shadow-orange-900/5 font-inter tracking-tight font-medium">
+    <div class="text-2xl font-black tracking-tighter text-orange-700 dark:text-orange-500">
+        <div class="flex items-center gap-3">
+            {{ logo(style="width:80px;height:80px") }}
+            <h1 class="text-3xl font-black tracking-tighter bg-gradient-to-r from-[#ff8200] to-[#009b77] bg-clip-text text-transparent mb-1">
+                ScrutIvoire
+            </h1>
+        </div>
+    </div>
+    <nav class="hidden md:flex items-center space-x-8">
+        <a class="election-filter national-filter text-orange-950 dark:text-white font-bold border-b-2 border-orange-600 transition-colors duration-300"
+           href="#">National</a>
+        <a class="election-filter local-filter text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-colors duration-300"
+           href="#">Local</a>
+        <a class="text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-colors duration-300"
+           href="#">About</a>
+    </nav>
+    <div class="flex items-center space-x-4">
+        <a href="{{ url_for('admin.login') }}" class="px-5 py-2 text-orange-700 font-semibold transition-transform scale-95 active:scale-90">
+            Login
+        </a>
+        <div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
+            <img alt="User profile" class="w-full h-full object-cover"
+                 data-alt="professional portrait of a person in a minimalist studio setting with soft side lighting and neutral background"
+                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtOfKEa3aVIyg6bpOd1segkM5gCqLtwtkCsHp7rSZJ5fEsikn7mPtcYAEdiEEN5ls8MqJGILrzRFMecT5c3lyFgbJyHIa3pY030gyZ6WFcozxLMg4_DLBFiHRXyTcgr1oxTsaMJ0FK5ARLUVscZCnTQQqMPJjossSZ8myaSktEEkkqTNb_bOYnnhgv0070iXFHdezfIamT4HsTgh8_EegoXdZhWKRNoTI25IdsBvS5zsYOJK4UE_UdDR7O8skZH-IGztKjh9FKMPYN"/>
+        </div>
+    </div>
+</header>
+
+<main class="shimmer-container pt-32 pb-24 max-w-[1440px] mx-auto px-6 md:px-12">
+    <!-- Section 1: Exploration Magnétique -->
+    <section class="mb-24">
+        <div class="flex flex-col items-center mb-12">
+            <div class="w-64 h-10 mb-8 rounded-full shimmer-bg bg-surface-container-high border border-outline-variant/10"></div>
+            <div class="w-48 h-12 rounded-2xl shimmer-bg mb-4"></div>
+            <div class="w-96 h-6 rounded-md shimmer-bg"></div>
+        </div>
+        <!-- 3-column Grid of Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Card 1 -->
+            <div class="bg-[#181c1e] rounded-2xl p-8 h-[400px] flex flex-col justify-between">
+                <div>
+                    <div class="w-16 h-8 rounded-md shimmer-dark mb-4"></div>
+                    <div class="w-full h-12 rounded-lg shimmer-dark mb-2"></div>
+                    <div class="w-3/4 h-6 rounded-md shimmer-dark mb-8"></div>
+                </div>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="w-24 h-4 rounded-sm shimmer-dark"></div>
+                        <div class="w-12 h-4 rounded-sm shimmer-dark"></div>
+                    </div>
+                    <div class="w-full h-12 rounded-xl shimmer-dark"></div>
+                </div>
+            </div>
+            <!-- Card 2 -->
+            <div class="bg-[#181c1e] rounded-2xl p-8 h-[400px] flex flex-col justify-between">
+                <div>
+                    <div class="w-16 h-8 rounded-md shimmer-dark mb-4"></div>
+                    <div class="w-full h-12 rounded-lg shimmer-dark mb-2"></div>
+                    <div class="w-3/4 h-6 rounded-md shimmer-dark mb-8"></div>
+                </div>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="w-24 h-4 rounded-sm shimmer-dark"></div>
+                        <div class="w-12 h-4 rounded-sm shimmer-dark"></div>
+                    </div>
+                    <div class="w-full h-12 rounded-xl shimmer-dark"></div>
+                </div>
+            </div>
+            <!-- Card 3 -->
+            <div class="bg-[#181c1e] rounded-2xl p-8 h-[400px] flex flex-col justify-between border-t-4 border-primary">
+                <div>
+                    <div class="w-16 h-8 rounded-md shimmer-dark mb-4"></div>
+                    <div class="w-full h-12 rounded-lg shimmer-dark mb-2"></div>
+                    <div class="w-3/4 h-6 rounded-md shimmer-dark mb-8"></div>
+                </div>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="w-24 h-4 rounded-sm shimmer-dark"></div>
+                        <div class="w-12 h-4 rounded-sm shimmer-dark"></div>
+                    </div>
+                    <div class="w-full h-12 rounded-xl shimmer-dark bg-primary/20"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- Section 2: L'ADN Électoral -->
+    <section class="mb-24 grid grid-cols-1 md:grid-cols-2 gap-12">
+        <!-- Left Block: Voter Turnout Stats -->
+        <div class="p-8 rounded-2xl bg-surface-container-low">
+            <div class="w-48 h-8 rounded-md shimmer-bg mb-6"></div>
+            <div class="w-full h-64 rounded-xl shimmer-bg flex items-end justify-between px-8 py-4 bg-gradient-to-t from-surface-container-highest/50 to-transparent">
+                <!-- Faking a chart with bars -->
+                <div class="w-8 h-20 rounded-t-md bg-outline-variant/30"></div>
+                <div class="w-8 h-32 rounded-t-md bg-outline-variant/30"></div>
+                <div class="w-8 h-48 rounded-t-md bg-outline-variant/30"></div>
+                <div class="w-8 h-24 rounded-t-md bg-outline-variant/30"></div>
+                <div class="w-8 h-40 rounded-t-md bg-outline-variant/30"></div>
+            </div>
+        </div>
+        <!-- Right Block: Geographic Distribution -->
+        <div class="p-8 rounded-2xl bg-surface-container-low">
+            <div class="w-56 h-8 rounded-md shimmer-bg mb-6"></div>
+            <div class="w-full h-64 rounded-xl shimmer-bg relative overflow-hidden bg-surface-container-highest">
+                <!-- Faking a map shape -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <div class="w-3/4 h-3/4 rounded-full shimmer-bg opacity-30 blur-2xl"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- Section 3: AI CTA Footer -->
+    <section
+            class="mb-24 py-16 bg-surface-container-lowest rounded-3xl text-center flex flex-col items-center">
+        <div class="w-32 h-4 rounded-full shimmer-bg mb-6"></div>
+        <div class="w-3/4 max-w-2xl h-14 rounded-2xl shimmer-bg mb-10"></div>
+        <div class="w-full max-w-3xl h-16 rounded-full border border-outline-variant/20 flex items-center px-6 relative">
+            <div class="w-full h-2 rounded-full shimmer-bg opacity-50"></div>
+            <div class="absolute right-3 w-10 h-10 rounded-full shimmer-bg"></div>
+        </div>
+        <div class="mt-8 flex gap-4">
+            <div class="w-32 h-12 rounded-xl shimmer-bg"></div>
+            <div class="w-32 h-12 rounded-xl border border-outline-variant shimmer-bg"></div>
+        </div>
+    </section>
+</main>
+
+<main class="data-container hidden w-full pt-32">
+    <!-- Hero Title -->
+    <div class="max-w-[1440px] mx-auto px-8 mb-24 text-center md:text-left">
+        <h1 class="text-[4rem] font-black leading-[1.1] tracking-tighter mb-6">
+            <span class="block">La Clarté.</span>
+            <span class="hero-gradient-text">Le Monument Digital.</span>
+        </h1>
+        <p class="text-[1.1rem] text-on-surface-variant max-w-2xl leading-relaxed">
+            Une immersion architecturale au cœur de la démocratie ivoirienne.
+            Visualisez les données, interrogez l'histoire, anticipez l'avenir à
+            travers notre prisme souverain.
+        </p>
+    </div>
+
+    <!-- Section 1: L'Exploration Magnétique -->
+    <section class="max-w-[1440px] mx-auto px-8 mb-32">
+        <div class="flex flex-col items-center mb-16">
+            <h2 class="text-label-md uppercase tracking-[0.2em] font-bold text-primary mb-8">
+                L'Exploration Magnétique</h2>
+            <div class="bg-surface-container-high p-1.5 rounded-full flex space-x-2">
+                <button class="election-filter px-8 py-2.5 rounded-full bg-white shadow-sm font-bold text-on-surface">
+                    Tous
+                </button>
+                <button class="election-filter national-filter px-8 py-2.5 rounded-full text-slate-500 hover:text-on-surface transition-all">
+                    National
+                </button>
+                <button class="election-filter national px-8 py-2.5 rounded-full text-slate-500 hover:text-on-surface transition-all">
+                    Local
+                </button>
+            </div>
+        </div>
+
+        <div id="election-card-container" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        </div>
+    </section>
+    <!-- Section 2: L'ADN Électoral -->
+    <section class="bg-surface-container-low py-32">
+        <div class="max-w-[1440px] mx-auto px-8">
+            <h2 class="text-label-md uppercase tracking-[0.2em] font-bold text-secondary mb-16 text-center">
+                L'ADN Électoral</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
+                <!-- Left: Area Chart -->
+                <div class="bg-surface-container-lowest p-12 rounded-xl">
+                    <h3 class="text-title-md font-bold mb-8">Évolution de la
+                        Base Électorale</h3>
+                    <div class="relative h-[300px] w-full mt-12 overflow-hidden">
+                        <!-- SVG Placeholder for Chart -->
+                        <svg class="w-full h-full" viewbox="0 0 400 150">
+                            <defs>
+                                <lineargradient id="areaGradient" x1="0%"
+                                                x2="0%" y1="0%" y2="100%">
+                                    <stop offset="0%"
+                                          style="stop-color:#009B77;stop-opacity:0.3"></stop>
+                                    <stop offset="100%"
+                                          style="stop-color:#009B77;stop-opacity:0"></stop>
+                                </lineargradient>
+                            </defs>
+                            <path d="M0,150 L0,120 C50,110 80,130 120,100 C160,70 200,90 250,50 C300,10 350,40 400,20 L400,150 Z"
+                                  fill="url(#areaGradient)"></path>
+                            <path d="M0,120 C50,110 80,130 120,100 C160,70 200,90 250,50 C300,10 350,40 400,20"
+                                  fill="transparent" stroke="#009B77"
+                                  stroke-width="4"></path>
+                        </svg>
+                        <div class="absolute bottom-0 left-0 right-0 flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest pt-4">
+                            <span>2010</span>
+                            <span>2015</span>
+                            <span>2020</span>
+                            <span>2025 (EST)</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right: Bar Chart -->
+                <div class="bg-surface-container-lowest p-12 rounded-xl">
+                    <h3 class="text-title-md font-bold mb-8">Analyse
+                        Comparative de la Parité</h3>
+                    <div class="space-y-8 mt-12">
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm font-bold uppercase tracking-wider text-slate-500">
+                                <span>Masculin</span>
+                                <span class="text-on-surface">52.4%</span>
+                            </div>
+                            <div class="w-full h-4 bg-surface-container rounded-full overflow-hidden">
+                                <div class="h-full bg-surface-variant w-[52.4%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm font-bold uppercase tracking-wider text-orange-600">
+                                <span>Féminin</span>
+                                <span class="text-on-surface">47.6%</span>
+                            </div>
+                            <div class="w-full h-4 bg-surface-container rounded-full overflow-hidden">
+                                <div class="h-full bg-primary-container w-[47.6%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <p class="text-body-md text-slate-400 leading-relaxed mt-10">
+                            Observation d'une réduction progressive de l'écart
+                            de parité dans l'inscription sur les listes
+                            électorales nationales depuis la dernière décennie.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- Section 3: Transition Footer -->
+    <section
+            class="relative py-48 bg-gradient-to-b from-surface-container-low to-white overflow-hidden">
+        <div class="max-w-4xl mx-auto px-8 relative z-10 text-center">
+            <h2 class="text-display-md font-black tracking-tight mb-4">
+                L'intelligence électorale à votre service.</h2>
+            <p class="text-xl text-slate-500 mb-16">Posez votre première
+                question.</p>
+            <div class="relative group">
+                <input class="w-full bg-transparent border-0 border-b-2 border-slate-200 focus:ring-0 focus:border-primary text-2xl py-6 px-0 placeholder:text-slate-300 transition-all duration-500"
+                       placeholder="Ex: Quel était le taux de participation à Abidjan en 2020 ?"
+                       type="text"/>
+                <button class="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-primary text-white shadow-xl shadow-primary/20 hover:scale-110 transition-transform">
+                    <span class="material-symbols-outlined">search</span>
+                </button>
+                <div class="absolute bottom-0 left-0 h-0.5 w-0 bg-primary group-focus-within:w-full transition-all duration-700"></div>
+            </div>
+        </div>
+        <!-- Abstract background shape -->
+        <div class="absolute -bottom-64 -right-64 w-[800px] h-[800px] bg-primary-container/5 rounded-full blur-[120px]"></div>
+    </section>
+</main>
+<!-- Footer -->
+<footer class="data-container hidden w-full py-16 px-8 flex flex-col items-center space-y-12 max-w-7xl mx-auto bg-slate-50 dark:bg-slate-950 font-inter text-body-md tracking-normal">
+    <div class="text-xl font-bold text-orange-900 dark:text-orange-100">
+        ScrutIvoire
+    </div>
+    <div class="flex flex-wrap justify-center gap-x-12 gap-y-6">
+        <a class="text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-all"
+           href="#">Election Laws</a>
+        <a class="text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-all"
+           href="#">Privacy Policy</a>
+        <a class="text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-all"
+           href="#">AI Governance</a>
+        <a class="text-slate-500 dark:text-slate-400 hover:text-orange-600 transition-all"
+           href="#">Contact Support</a>
+    </div>
+    <div class="pt-8 border-t border-slate-200 dark:border-slate-800 w-full text-center text-slate-400 text-sm">
+        © 2026 ScrutIvoire. A digital monument to transparency.
+    </div>
+</footer>
+<footer class="shimmer-container w-full py-12 px-8 bg-slate-100 dark:bg-slate-950">
+    <div class="w-full flex flex-col md:flex-row justify-between items-center gap-6 max-w-7xl mx-auto">
+        <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-md shimmer-bg"></div>
+            <div class="w-32 h-6 rounded-md shimmer-bg"></div>
+        </div>
+        <div class="flex gap-8">
+            <div class="w-24 h-4 rounded-sm shimmer-bg"></div>
+            <div class="w-24 h-4 rounded-sm shimmer-bg"></div>
+            <div class="w-24 h-4 rounded-sm shimmer-bg"></div>
+            <div class="w-24 h-4 rounded-sm shimmer-bg"></div>
+        </div>
+        <div class="w-64 h-4 rounded-sm shimmer-bg opacity-70"></div>
+    </div>
+</footer>
+
+
+{% endblock %}
+{% block script %}
+<script>
+    const formatCompact = (number) => {
+      return new Intl.NumberFormat('fr-FR', {
+        notation: "compact",
+        compactDisplay: "short"
+      }).format(number);
+    };
+    $(".election-filter").click((e)=>{
+
+    });
+
+    $("#election-card-container").on("click", "button", (e)=>{
+        let target = $(e.target);
+        location.href = "/Chat/" + target.attr("data-id");
+    })
+
+    $(document).ready(()=>{
+        fetch(config_app.api_base + "/stat").then((response)=>{
+            return response.json()
+        }).then((data)=>{
+            console.log(data)
+            $(".shimmer-container").hide();
+            $(".data-container").removeClass("hidden");
+            const tmp = $("#election-card").html();
+
+            data.elections.forEach(
+                (el)=>{
+                    let card = $(tmp);
+                    card.find(".election-card-type").text(
+                        (el.type || "---").toUpperCase()
+                    )
+
+                    card.find(".election-card-name").text(
+                        (el.name || "---").toUpperCase()
+                    )
+
+                    card.find(".election-card-seat").text(
+                        (el.nb_seat || 1).toString()
+                    )
+
+                    card.find(".election-card-voters").text(
+                        (formatCompact(el.voters_total) || "---").toString().toUpperCase() + " Voteurs"
+                    ).attr("title", el.voters_total);
+
+                    card.find(".election-card-part").text(
+                        100*(el.expressed_votes/(el.registered_voters_total || el.pop_size)).toFixed(2) + "% Part."
+                    )
+                    card.find(".election-card-link").attr("data-id", el.id);
+
+                    $("#election-card-container").append(card);
+                });
+                let size = data.elections.length;
+                while (size < 3){
+                    $("#election-card-container").append(`<div style='border: 3px dashed' class="group bg-[#eeeeee] p-10 rounded-xl flex flex-col justify-between h-[480px]"></div>`)
+                    size ++;
+                }
+        });
+
+
+
+
+    })
+</script>
+{% endblock %}

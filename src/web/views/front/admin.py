@@ -20,3 +20,11 @@ async def index():
 @admin.get("/Archives")
 async def archives():
     return render_template("archives.html", api_base=API_BASE)
+
+
+
+@admin.get("/Monitoring")
+async def monitoring():
+    return render_template("monitoring.html", api_base=API_BASE)
+
+

@@ -15,10 +15,10 @@ class RedisMessageBroker(MessageBroker):
     async def publish(self, channel: str, payload: Any) -> int:
         conn = await self._redis.get_conn()
         persistance = self.is_persistante_channel(channel)
-        payload = self._redis.serialize(payload)
         if persistance:
             return await self._redis.lpush(channel, payload)
         else:
+            payload = self._redis.serialize(payload)
             return await conn.publish(channel, payload)
 
     def subscribe(
@@ -47,46 +47,64 @@ class RedisMessageBroker(MessageBroker):
                                     timeout -
                                     (asyncio.get_event_loop().time() - s)
                             )
-                            res = await pubsub.get_message(
-                                timeout=_t
-                            )
-                            if res is None or _t <= 0:
+                            if _t <= 0:
                                 return
-                            await queue.put({
-                                "channel": res["channel"].decode(),
-                                "data": res["data"]
-                            })
+                            res = await pubsub.get_message(
+                                timeout=(
+                                    0.01 if _t == float("inf") else _t
+                                )
+                            )
+                            if res is not None:
+                                c = res["channel"]
+                                if isinstance(c, bytes):
+                                    c = c.decode()
+                                await queue.put({
+                                    "channel": c,
+                                    "data": res["data"]
+                                })
+                            if _t <= 0:
+                                return
                     finally:
                         await pubsub.unsubscribe(*np_channels)
                         await pubsub.aclose()
                         await pubsub_conn.aclose()
                 tasks.append(asyncio.create_task(non_persistante_msg()))
-                await asyncio.sleep(0)
 
             if p_channels:
                 async def persistante_msg():
                     while True:
                         _t = timeout - (asyncio.get_event_loop().time() - s)
+                        if _t <= 0:
+                            return
                         res = await conn.brpop(
                             list(p_channels),
-                            timeout=_t
+                            timeout=(
+                                0 if _t == float("inf") else max(1, int(_t))
+                            )
                         )
                         if res is None or _t <= 0:
                             return
                         chan, val = res
                         await queue.put({
-                            "channel": chan.decode(), "data": val
+                            "channel": (
+                                chan if isinstance(chan,str) else chan.decode()
+                            ),
+                            "data": val
                         })
 
                 tasks.append(asyncio.create_task(persistante_msg()))
-
+            await asyncio.sleep(0)
             try:
                 age = asyncio.get_event_loop().time() - s
                 while age < timeout:
                     age = asyncio.get_event_loop().time() - s
                     try:
                         raw_message = await asyncio.wait_for(
-                            queue.get(), timeout=timeout-age
+                            queue.get(), timeout=(
+                                None
+                                if (timeout - age) == float("inf")
+                                else (timeout - age)
+                            )
                         )
                         if raw_message is not None:
                             try:
@@ -101,6 +119,8 @@ class RedisMessageBroker(MessageBroker):
                             return
                     except asyncio.TimeoutError:
                         break
+            except StopIteration:
+                pass
             finally:
                 for t in tasks:
                     t.cancel()

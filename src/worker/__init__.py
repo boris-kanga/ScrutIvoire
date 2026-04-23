@@ -1,14 +1,17 @@
 import asyncio
+import io
+import json
 import re
+import traceback
+import uuid
+from functools import partial
+from typing import Dict, Any
 
 import pdfplumber
-
-from kb_tools.tools import remove_accent_from_text
-
+from PIL import Image
 
 from src.infrastructure.database.pgdb import PgDB
 from src.infrastructure.database.redisdb import RedisDB
-from src.infrastructure.file_storage import FileStorageProtocol
 
 from socketio import AsyncRedisManager
 
@@ -21,97 +24,1383 @@ from src.domain.message_broker import MessageBrokerChannel
 from src.repository.election_repo import ElectionRepo
 
 from src.services.election_service import ElectionService
-from src.utils.tools import extract_date_from_text
+from src.services.llm_service import LLMService
+from src.worker.archive_utils import get_row_content_at_idx, _first_idx, \
+    _consolidate_bbox, \
+    get_column_x_bounds, idx_to_cords, get_text_within_bbox
 from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
-    find_pdf_utils_columns
+    find_pdf_utils_columns, map_columns_force, get_regions, is_region, \
+    is_candidate_winner, extract_region_locality_text, get_row_content_at_idx, \
+    _first_idx, _consolidate_bbox, get_column_x_bounds, get_region_separators, \
+    get_locality_separators
+
+
+PADDING = 5
+
+
+async def _to_async(func, *args, **kwargs):
+    return await asyncio.to_thread(func, *args, **kwargs)
 
 
 class Worker:
     def __init__(
             self,
-            db: PgDB = None,
-            rd: RedisDB = None,
-            storage: FileStorageProtocol = None,
-            socket = None
+            election_service: ElectionService=None,
+            socket=None,
+            llm_service=None,
+            msg_broker=None
     ):
-        if db is None:
+        if election_service is None:
             db = PgDB(dsn=POSTGRES_DB_URI)
-
-        if rd is None:
             rd = RedisDB(url='redis://{host}:{port}'.format(**REDIS_CONFIG))
-
-        if storage is None:
             storage = S3StorageAdapter(**S3_CONFIG)
+            election_service = ElectionService(ElectionRepo(db), rd, storage)
+
+        if msg_broker is None:
+            rd = RedisDB(url='redis://{host}:{port}'.format(**REDIS_CONFIG))
+            msg_broker = RedisMessageBroker(rd)
+
         if socket is None:
-            socket = AsyncRedisManager(**REDIS_CONFIG)
+            socket = AsyncRedisManager(
+                'redis://{host}:{port}'.format(**REDIS_CONFIG)
+            )
+
+        if llm_service is None:
+            llm_service = LLMService()
+
+        self.election_service = election_service
+        self.socket           = socket
+        self.llm_service         = llm_service
+        self.mr               = msg_broker
+        self._tasks: Dict[str, asyncio.Task] = {}
+
+    async def _get_columns_from_archive(self, columns, name):
+        """
+        Appelle le LLM pour identifier le mapping des colonnes du tableau.
+        Retourne un dict avec :
+          - idx                      : mapping nom_colonne → liste d'index
+          - candidate_results_format : 'row' ou 'column'
+          - candidate_results        : détail du format candidats
+          - confidence_score         : score de confiance du LLM
+          - election_type            : 'legislative' ou autre
+        En cas d'échec du LLM, tente un mapping forcé heuristique.
+        """
+
+        response = await self.llm_service.detect_columns(
+            columns, name
+        )
+
+        print("llm->", response)
+        print("columns:", columns)
+        fields = [
+            "region",
+            "locality",
+            "polling_stations_count",
+            "on_call_staff",
+            "pop_size_male",
+            "pop_size_female",
+            "pop_size",
+            "registered_voters_male",
+            "registered_voters_female",
+            "registered_voters_total",
+            "voters_male",
+            "voters_female",
+            "voters_total",
+            "participation_rate",
+            "null_ballots",
+            "expressed_votes",
+            "blank_ballots_count",
+            "blank_ballots_pct",
+            "unregistered_voters_count"
+        ]
+        if not response["success"]:
+            # Fallback heuristique si le LLM échoue
+            rsp, candidate_results_format, candidate_results = map_columns_force(columns)
+            if not all(
+                (rsp.get(k) not in (None, -1)) for k in (
+                    "region", "locality", "polling_stations_count",
+                    "voters_total", "expressed_votes",
+                )
+            ):
+                return None
+            election_type = "legislative" if "legislative" in str(name) else None
+            return {
+                "idx":                      rsp,
+                "candidate_results_format": candidate_results_format,
+                "candidate_results":        candidate_results,
+                "confidence_score":         0.5,
+                "election_type":            election_type
+            }
+
+        result = response["result"]
+        rsp    = result["mapping_index"]
+        if not all(
+            (rsp.get(k) not in (None, -1)) for k in (
+                "region", "locality", "polling_stations_count",
+                "voters_total", "expressed_votes",
+            )
+        ):
+            return None
+
+        _f = result["election_metadata"]["format"]
+
+        # Regrouper les colonnes fusionnées (même libellé d'en-tête) en
+        # listes d'index consécutifs, afin que get_row_content_at_idx
+        # puisse concaténer les valeurs de plusieurs colonnes.
+        try:
+            real_res = {}
+            for k, idx in rsp.items():
+                if k not in fields:
+                    continue
+                if idx in (-1, None):
+                    continue
+                label = columns[idx]
+                group = []
+                for i, c in enumerate(columns):
+                    if c == label:
+                        group.append(i)
+                    elif group:
+                        break
+                real_res[k] = group
+        except (KeyError, IndexError):
+            return None
+
+        return {
+            "idx":                      real_res,
+            "candidate_results_format": _f,
+            "candidate_results":        result["candidate_results"][_f + "_mode"],
+            "confidence_score":         result["election_metadata"]["confidence_score"],
+            "election_type":            result["election_metadata"]["type"]
+        }
+
+    @staticmethod
+    async def _crop(_page, _bbox_json, index):
+        if _bbox_json.get(index) is None:
+            return None
+        x0, top, x1, bottom = _bbox_json[index]
+
+        x0 = max(0, x0 - PADDING)
+        top = max(0, top - PADDING)
+        x1 = min(float(_page.width), x1 + PADDING)
+        bottom = min(float(_page.height), bottom + PADDING)
+
+        c = await _to_async(_page.crop, (x0, top, x1, bottom))
+        return (await _to_async(c.to_image, resolution=150)).original  # PIL onject
+
+    @staticmethod
+    def vertical_merge_pil_image(list_img):
+        list_img = list(filter(None, list_img))
+
+        buf = io.BytesIO()
+        if not list_img:
+            return buf.getvalue()
+        total_height = sum(img.height for img in list_img)
+        max_width = max(img.width for img in list_img)
+        merged = Image.new("RGB", (max_width, total_height), (255, 255, 255))
+
+        y = 0
+        for img in list_img:
+            merged.paste(img, (0, y))
+            y += img.height
+
+        merged.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
 
 
-        self.db = db
-        self.rd = rd
-        self.storage = storage
+    async def _processing_archive_task(self, room, election_id):
+        print("debut du processing de election id", room, election_id)
+        election = await self.election_service.get(election_id)
+        if not election:
+            print(election, "election pas trouver")
+            return []
+        _redis_key = "process-" + str(election_id)
 
-        self.socket = socket
+        process_working_actual: Dict[str, Any] = {
+            "fingerprint": {
+                "state": "not-started",
+                "raw_name": None,
+                "name": None,
+                "type": None
+            },
+            "table":{
+                "state": "not-started",
+                "header_rows_count": None,
+                "columns_found": None,
+            },
+            "group":{
+                "state": "not-started",
+                "list": []
+            },
+            "place": {
+                "state": "not-started",
+                "list": []
+            },
+            "database": {
+                "state": "not-started",
+            }
+        }
 
-        self.mr = RedisMessageBroker(self.rd)
+        async def save_state():  # process_working_actual
+            await self.election_service.set_archive_process_working(process_working_actual, election_id)
+            await self.socket.emit(
+                "election_processing",
+                process_working_actual,
+                room=f"processing-{election_id}"
+            )
+        await save_state()
 
-    async def archive_processing(self):
-        service = ElectionService(ElectionRepo(self.db), self.rd, self.storage)
+        print("going to work for election:", election)
+        table_settings = {
+            "vertical_strategy":        "lines",
+            "horizontal_strategy":      "lines",
+            "snap_y_tolerance":         3,
+            "intersection_y_tolerance": 10
+        }
 
         def _sync_read(_filename):
-            with pdfplumber.open(filename) as pdf:
+            with pdfplumber.open(_filename) as pdf:
                 for p in pdf.pages:
                     yield p
 
-        async def _async_read(_filename):
+
+        async def _async_read_pdf(_filename):
             _iter = _sync_read(_filename)
             while True:
                 try:
-                    p = await asyncio.to_thread(next, _iter)
+                    p = await asyncio.to_thread(next, _iter, None)
+                    if p is None:
+                        break
                     yield p
                 except StopIteration:
                     break
 
-        async for message in self.mr.subscribe(
-                MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT
-        ):
-            data = message["data"]
-            sid = data["sid"]
-            election_id = data["election_id"]
-            election = await service.get(election_id)
-            if not election:
-                return
-            doc = election.doc
-            async with doc.get() as filename:
-                page1 = None
-                async for page in _async_read(filename):
-                    if page1 is None:
-                        page1 = page
-                        name = await asyncio.to_thread(
-                            extract_election_name_from_pdf_page_1,
-                            page1
-                        )
-                        if name is not None:
-                            await self.socket.emit(
-                                "election_processing",
-                                {
-                                    "election_name": name,
-                                },
-                                to=sid
+
+        async def _loop(fn, *args, **kw):
+            def _inner():
+                for item in fn(*args, **kw):
+                    yield item
+            _iter = _inner()
+            while True:
+                try:
+                    yield await asyncio.to_thread(next, _iter)
+                except StopIteration:
+                    break
+
+
+        async def extract_region_locality_by_prevent_rotation(_row, _idx, _page):
+            return_value = ""
+            for i in sorted(_idx):
+                _cell = _row.cells[i]
+                if _cell is None:
+                    pass
+                else:
+                    _tmp = await _to_async(
+                        extract_region_locality_text, _page, _cell
+                    )
+                    return_value += " " + _tmp
+            return return_value.strip()
+
+
+        doc = election.doc
+        extracted_locality = []
+
+
+        async def _insert_locality_img(l):
+            file = self.vertical_merge_pil_image(l["pil_img"])
+            l.pop("pil_img")
+            l["crop_url"] = await self.election_service.storage.upload(
+                str(election_id), file, "crops/locality/" + uuid.uuid4().hex + ".png",
+                content_type="image/png", public=True, retrieve_url=True
+            )
+            extracted_locality.append(l)
+            process_working_actual["place"]["list"][-1] = (
+                {
+                    "state": "done",
+                    "name": l["value"],
+                    "region": l["stage"].get("region")
+                }
+            )
+            await save_state()
+
+
+        async  def _insert_cand_img(_page, _cand):
+            bbox_json = _cand["bbox_json"][0]
+            k = next(iter(bbox_json.keys()))
+            pil_img = [
+                await self._crop(
+                    _page,
+                    bbox_json,
+                    k
+                )
+            ]
+            file = self.vertical_merge_pil_image(pil_img)
+            _cand[
+                "crop_url"] = await self.election_service.storage.upload(
+                str(election_id), file, "crops/candidate/" + uuid.uuid4().hex + ".png",
+                content_type="image/png", public=True, retrieve_url=True
+            )
+
+        # await self.socket.emit(
+        #     "election_processing-stream",
+        #     "[Process] Lecture du PDF",
+        #     room=f"processing-{election_id}"
+        # )
+        async with doc.get() as filename:
+            # await self.socket.emit(
+            #     "election_processing-stream",
+            #     "[OK] Lecture du PDF",
+            #     room=f"processing-{election_id}"
+            # )
+
+            page1         = None
+            columns_meta  = None
+            name          = None
+            column_cache  = set()
+            index_row     = 0
+            last_region   = None
+
+            # Structure d'une localité en cours de traitement :
+            # - value      : nom de la localité (str ou None)
+            # - cords      : {page_index: [(bbox), ...] ou tuple consolidé}
+            # - stage      : métadonnées (region, nb_bv, inscrits, votants, ...)
+            # - candidates : liste des candidats collectés
+            last_locality = {
+                "value":      None,
+                "cords":      {},
+                "stage":      {},
+                "candidates": [],
+                "pil_img": [],
+                "crop_url": None
+            }
+
+            page_index         = -1
+
+            # await self.socket.emit(
+            #     "election_processing-stream",
+            #     "[Process] Parcourt des pages",
+            #     room=f"processing-{election_id}"
+            # )
+            async for page in _async_read_pdf(filename):
+                page_index  += 1
+
+                # await self.socket.emit(
+                #     "election_processing-stream",
+                #     f"[Process] Page {page_index+1}",
+                #     room=f"processing-{election_id}"
+                # )
+                table_index  = 0
+                # if page_index == 3:
+                #     print("\n\n\n\n\n\n", len(page.rects))
+                #     for rect in page.rects:
+                #         print(rect)
+                #     exit()
+
+                # ── Extraire le nom de l'élection depuis la première page ──
+                if page1 is None:
+                    process_working_actual["fingerprint"]["state"] = "pending"
+                    await save_state()
+
+                    page1 = page
+                    name  = await asyncio.to_thread(
+                        extract_election_name_from_pdf_page_1, page1
+                    )
+                    if name is not None:
+                        process_working_actual["fingerprint"]["election_raw"] = name
+                        await save_state()  # process_working_actual
+
+
+                # ── Identifier les colonnes (une seule fois, sur la première
+                #    page qui contient le bon tableau) ──
+                if columns_meta is None:
+                    process_working_actual["table"][
+                        "state"] = "pending"
+                    await save_state()
+                    async for table_rows_data in _loop(
+                        page.extract_tables, table_settings=table_settings
+                    ):
+                        column, index_row = find_pdf_utils_columns(table_rows_data)
+                        if all(not c for c in column):
+                            continue
+                        key = "|".join(column)
+                        if key in column_cache:
+                            continue
+                        column_cache.add(key)
+                        columns_meta = await self._get_columns_from_archive(column, name)
+                        if columns_meta is not None:
+                            election.set(
+                                type_=columns_meta.get("election_type"),
+                                name=name
                             )
-                        # detecter les colonnes du tableau.
-                        table = await asyncio.to_thread(
-                            page.extract_table
+
+                            process_working_actual["fingerprint"][
+                                "state"] = "done"
+                            process_working_actual["table"][
+                                "state"] = "done"
+                            process_working_actual["fingerprint"].update(
+                                {
+                                    "name": election.name,
+                                    "type": election.type
+                                }
+                            )
+
+                            if columns_meta["candidate_results_format"] == "column":
+                                process_working_actual["group"]["list"] = [
+                                    {"name": c["candidate_name"], "party_ticker": c["party_ticker"]}
+                                    for c in columns_meta["candidate_results"]
+                                ]
+                                process_working_actual["group"]["state"] = "done"
+                            else:
+                                process_working_actual["group"][
+                                    "state"] = "pending"
+                            process_working_actual["table"]["header_rows_count"] = index_row
+                            process_working_actual["table"]["columns_found"] = {
+                                "idx": columns_meta["idx"],
+                                "column": column
+                            }
+                            await save_state()  # process_working_actual
+                            break
+                        table_index += 1
+                    if columns_meta is None:
+                        continue
+
+                # ── Index des colonnes utiles ──
+                candidate_results_format = columns_meta["candidate_results_format"]
+                region_idx            = columns_meta["idx"]["region"]
+                if not isinstance(region_idx, list):
+                    region_idx = [region_idx]
+                locality_idx          = columns_meta["idx"]["locality"]
+                if not isinstance(locality_idx, list):
+                    locality_idx = [locality_idx]
+                idxs                  = columns_meta["idx"]
+                candidate_results_idx = columns_meta["candidate_results"]
+
+                # Premier index entier pour accéder à row.cells[]
+                region_cell_idx   = _first_idx(region_idx)
+                locality_cell_idx = _first_idx(locality_idx)
+
+                _current_table_index = 0
+                process_working_actual["place"]["state"] = "pending"
+                await save_state()
+                async for table in _loop(page.find_tables, table_settings=table_settings):
+                    if _current_table_index < table_index:
+                        print("il s'agit ne sagit pas du table")
+                        # Sauter les tableaux avant celui identifié lors de la détection des colonnes
+                        continue
+
+                    # ── Calculer les frontières une seule fois pour ce tableau/page ──
+                    # On récupère les X de la colonne région et localité depuis le tableau
+                    region_x0, region_x1 = await _to_async(
+                        get_column_x_bounds, table, region_idx
+                    )
+                    locality_x0, locality_x1 = await _to_async(
+                        get_column_x_bounds, table, locality_idx
+                    )
+                    # Calculer les Y des edges horizontaux traversant chaque colonne
+                    # REMPLACER les appels à get_boundary_edges par :
+                    if region_x0 is not None:
+                        region_separators = await _to_async(
+                            get_region_separators, page, region_x0
                         )
-                        column = find_pdf_utils_columns(table)
+                    if locality_x0 is not None:
+                        locality_separators = await _to_async(
+                            get_locality_separators, page, locality_x0
+                        )
+
+                    # Réinitialiser le Y de référence au début de chaque page
+                    last_row_y = table.bbox[1]
+
+                    table_data = await _to_async(table.extract)
+
+                    index = -1
+
+                    place_row_init_y = False
+                    col_x_bounds = {}  # {idx: (x0, x1)}
+                    for row in table.rows:
+                        index += 1
+                        for idx, cell in enumerate(row.cells):
+                            if cell is not None:
+                                if idx not in col_x_bounds:
+                                    col_x_bounds[idx] = (cell[0], cell[2])
+                                else:
+                                    col_x_bounds[idx] = (
+                                        max(col_x_bounds[idx][0], cell[0]),
+                                        min(col_x_bounds[idx][1], cell[2])
+                                    )
+
+                        print(f"[{page_index+1}page - line {index}]", table_data[index])
+
+                        # ── Sauter les lignes d'en-tête ──
+                        if index < index_row:
+                            print("il s'agit du ligne d'entete du tableau")
+                            # to don't consider the table header base on index_row calculated a few top
+                            last_row_y = row.bbox[1]
+                            continue
+
+                        if not place_row_init_y:
+                            last_row_y = row.bbox[1]
+                            place_row_init_y = True
+
+                        row_content = table_data[index]
+                        row_box     = row.bbox  # (x0, top, x1, bottom)
+
+                        # ── Cellules physiques ──
+                        # row.cells[i] non-None → nouvelle cellule physique sur
+                        #   cette ligne (début d'une cellule fusionnée ou cellule
+                        #   ordinaire).
+                        # row.cells[i] None     → continuation d'une cellule
+                        #   fusionnée commencée sur une ligne précédente.
+                        cell_region = (
+                            row.cells[region_cell_idx]
+                            if region_cell_idx < len(row.cells) else None
+                        )
+                        cell_locality = (
+                            row.cells[locality_cell_idx]
+                            if locality_cell_idx < len(row.cells) else None
+                        )
+
+                        region_raw = await extract_region_locality_by_prevent_rotation(
+                            row, region_idx, page
+                        )
+                        locality_raw = await extract_region_locality_by_prevent_rotation(
+                            row,  locality_idx, page
+                        )
+
+                        # ── Skip : ligne de total sur région ──
+                        # Les totaux de région (ligne globale) doivent être ignorés
+                        # partout dans le document.
+                        if region_raw and re.search(
+                            r"\b(total|pourcentage|%)\b", region_raw, flags=re.IGNORECASE
+                        ):
+                            print("\tline total skip")
+                            continue
+
+                        # ── Skip : ligne de total sur localité ──
+                        # Lignes de sous-total par localité ou lignes purement
+                        # numériques (ex: numéro de page parasite).
+                        if locality_raw and (
+                            re.search(
+                                r"\b(total|pourcentage|%)\b",
+                                locality_raw, flags=re.IGNORECASE
+                            )
+                            or re.search(r"^\s*\d+[\s\d]*$", locality_raw)
+                        ):
+                            print("line total skip locality")
+                            continue
+
+                        # Détecter changement de région via les séparateurs de page.rects
+                        # Un séparateur entre last_row_y et row_box[1] = nouvelle région
+                        region_sep_crossed = any(
+                            last_row_y < sep <= row_box[1] + 2
+                            for sep in region_separators
+                        )
+
+                        # Détecter changement de localité via les séparateurs
+                        locality_sep_crossed = any(
+                            last_row_y < sep <= row_box[1] + 2
+                            for sep in locality_separators
+                        )
+
+                        # Mise à jour du curseur Y
+                        last_row_y = row_box[1]
+
+                        if region_sep_crossed:
+                            # Nouvelle région — fermer la localité courante
+                            print("Nouvelle region avec region_sep_crossed")
+                            if last_locality["value"] is not None:
+                                _consolidate_bbox(last_locality["cords"], page_index)
+                                last_locality["pil_img"].append(
+                                    await self._crop(
+                                        page,
+                                        last_locality["cords"],
+                                        page_index
+                                    )
+                                )
+                                await _insert_locality_img(last_locality)
+
+
+                            last_locality = {
+                                "value": None,
+                                "cords": {},
+                                "stage": {"region": None},
+                                "candidates": [],
+                                "pil_img": [],
+                                "crop_url": None
+                            }
+                            last_region = None
+
+                        elif locality_sep_crossed:
+                            print("Nouvelle locality avec locality_sep_crossed")
+                            # Nouvelle localité — sera confirmée quand locality_raw sera non vide
+                            if last_locality["value"] is not None:
+                                _consolidate_bbox(last_locality["cords"], page_index)
+                                last_locality["pil_img"].append(
+                                    await self._crop(
+                                        page,
+                                        last_locality["cords"],
+                                        page_index
+                                    )
+                                )
+                                await _insert_locality_img(last_locality)
+
+                            last_locality = {
+                                "value": None,
+                                "cords": {},
+                                "stage": {"region": last_region},
+                                "candidates": [],
+                                "pil_img": [],
+                                "crop_url": None
+                            }
+                        # ── Skip : aucun contexte actif du tout ──
+                        # Lignes de total global en tout début de tableau, avant
+                        # que la première vraie région/localité soit apparue.
+                        # if (
+                        #     not last_region
+                        #     and not last_locality["value"]
+                        #     and not extracted_locality
+                        # ):
+                        #     print("on skip car on n'a pas de contexte")
+                        #     continue
+
+                        # ── Traiter le changement de RÉGION ──
+                        # cell_region non-None + r non vide → vraie nouvelle région.
+                        #   → implique forcément une nouvelle localité.
+                        # cell_region non-None + r vide     → saut de page, la région
+                        #   continue depuis la page précédente : on garde last_region.
+                        if cell_region is not None and region_raw:
+                            print("On est sur une nouvelle zone de region")
+                            # _is_region, rr = True, region_raw
+                            _is_region, rr = await _to_async(is_region, region_raw)
+                            if _is_region:
+
+                                # Nouvelle région → forcément nouvelle localité :
+                                # fermer la localité courante si elle a une valeur.
+                                if last_region is not None and last_region != rr:
+                                    print("On est sur une nouvelle zone de region\n\tRegion=", rr)
+                                    if last_locality["value"] is not None:
+                                        print("on ferme la locality:", repr(last_locality["value"][:10]), "...")
+                                        _consolidate_bbox(last_locality["cords"], page_index)
+
+                                        last_locality["pil_img"].append(
+                                            await self._crop(
+                                                page,
+                                                last_locality["cords"],
+                                                page_index
+                                            )
+                                        )
+
+                                        await _insert_locality_img(last_locality)
+
+                                    # Réinitialiser last_locality en attente du nom
+                                    print("on est sur une nouvelle locality ")
+                                    last_locality = {
+                                        "value":      None,
+                                        "cords":      {},
+                                        "stage":      {"region": rr},
+                                        "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
+                                    }
+                                else:
+                                    if last_region != rr:
+                                        print(
+                                            "On vient de trouver le nom de "
+                                            "current Region-->", rr
+                                        )
+                                        last_locality["stage"]["region"] = rr
+
+                                last_region = rr
+
+                                # Fill back : propager last_region aux localités
+                                # extraites dont la région était encore None
+                                # (localité traitée avant que son nom de région
+                                # soit apparu dans le flux).
+                                i = len(extracted_locality) - 1
+                                while i >= 0:
+                                    prev = extracted_locality[i]
+                                    if prev["stage"].get("region") is None:
+                                        prev["stage"]["region"] = last_region
+                                    else:
+                                        break
+                                    i -= 1
+
+                        # ── Traiter le changement de LOCALITÉ ──
+                        #
+                        # cell_locality non-None = signal de nouvelle cellule
+                        # physique localité. Trois sous-cas :
+                        #
+                        # 1. locality_raw vide :
+                        #    Fin de la localité précédente qui déborde sur une
+                        #    ligne supplémentaire (cas ligne 11 page 2). On ne
+                        #    fait rien — on attend la prochaine ligne avec un
+                        #    vrai contenu.
+                        #
+                        # 2. locality_raw non vide + last_locality["value"] None :
+                        #    Fill forward — on vient de créer last_locality sans
+                        #    valeur (après un changement de région ou saut de page).
+                        #    On renseigne juste la valeur sans toucher aux cords
+                        #    ni aux candidates déjà accumulés.
+                        #
+                        # 3. locality_raw non vide + last_locality["value"] non None
+                        #    + différent :
+                        #    Vraie nouvelle localité — fermer la précédente,
+                        #    ouvrir une nouvelle.
+                        #
+                        # 4. locality_raw == last_locality["value"] :
+                        #    Même localité (ex: saut de page avec répétition du
+                        #    nom) — rien à faire.
+                        if cell_locality is not None and locality_raw:
+                            if last_locality["value"] is None:
+                                print("\ton vient de trouver le nom de la localite=", repr(locality_raw[:20]), "...")
+
+                                # Cas 2 : fill forward
+                                last_locality["value"] = locality_raw
+                                last_locality["stage"]["region"] = last_region
+
+                                process_working_actual["place"]["list"].append(
+                                    {
+                                        "state": "pending",
+                                        "name": last_locality["value"],
+                                        "region": last_locality["stage"].get("region")
+                                    }
+                                )
+                                await save_state()
+                            elif locality_raw != last_locality["value"]:
+                                is_fake_locality = False
+                                if not locality_sep_crossed and not region_sep_crossed:
+                                    # le nom de la locality est sur plusieurs ligne peut-etre
+                                    # il faut imperativemet que ces ligne aient ...
+                                    needed_v = (
+                                        "registered_voters_total",
+                                        "voters_total",
+                                        "expressed_votes"
+                                    )
+                                    for k in needed_v:
+                                        i = idxs[k]
+                                        s = get_row_content_at_idx(
+                                            row_content, i
+                                        )
+                                        if not s:
+                                            is_fake_locality = True
+                                            break
+                                if not is_fake_locality:
+                                    # Cas 3 : vraie nouvelle localité
+                                    print("on ferme la locality:",
+                                          repr(last_locality["value"][:10]), "...")
+                                    _consolidate_bbox(last_locality["cords"], page_index)
+
+                                    last_locality["pil_img"].append(
+                                        await self._crop(
+                                            page,
+                                            last_locality["cords"],
+                                            page_index
+                                        )
+                                    )
+                                    await _insert_locality_img(last_locality)
+
+                                    print("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
+                                    last_locality = {
+                                        "value":      locality_raw,
+                                        "cords":      {page_index: []},
+                                        "stage":      {"region": last_region},
+                                        "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
+                                    }
+                                    process_working_actual["place"]["list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
+                                else:
+                                    last_locality["value"] += " " + locality_raw
+                            # Cas 4 (locality_raw == last_locality["value"]) :
+                            # même localité, rien à faire.
+
+                        # ── Remplir les métadonnées de la localité ──
+                        # Premier passage uniquement (stage.get(k) is None).
+                        # Les lignes candidats suivantes ne doivent pas écraser
+                        # les valeurs déjà renseignées.
+                        for k, i in idxs.items():
+                            if k in ("region", "locality"):
+                                continue
+                            if i in (None, [None], -1, [-1]):
+                                continue
+                            if last_locality["stage"].get(k) is not None:
+                                continue
+                            s = get_row_content_at_idx(row_content, i)
+                            if not s:
+                                continue
+                            print("\t", repr(k), "-->", s)
+                            last_locality["stage"][k] = s
+
+                        # ── Accumuler le bbox de cette ligne ──
+                        if page_index not in last_locality["cords"]:
+                            last_locality["cords"][page_index] = []
+                        last_locality["cords"][page_index].append(row_box)
+
+                        if candidate_results_format == "row":
+                            # Un candidat par ligne du tableau
+                            cand = {}
+
+                            pty_idx = candidate_results_idx.get("party_idx")
+                            if pty_idx is not None and pty_idx != -1:
+                                cand["party_ticker"] = get_row_content_at_idx(
+                                    row_content, pty_idx
+                                )
+
+                            name_idx = candidate_results_idx.get("candidate_name_idx")
+                            if name_idx is not None and name_idx != -1:
+                                cand["full_name"] = get_row_content_at_idx(
+                                    row_content, name_idx
+                                )
+
+                            score_idx = candidate_results_idx.get("score_idx")
+                            if score_idx is not None and score_idx != -1:
+                                cand["raw_value"] = get_row_content_at_idx(
+                                    row_content, score_idx
+                                )
+
+                            cand["bbox_json"] = [{page_index: row_box}]
+
+                            await _insert_cand_img(page, cand)
+                            print("\t\tajout du candidat:", str(cand)[:30])
+                            last_locality["candidates"].append(cand)
+                            status_idx = candidate_results_idx.get("status_idx")
+                            if status_idx not in (-1, None):
+                                cand["winner"] = is_candidate_winner(
+                                    get_row_content_at_idx(
+                                        row_content, status_idx
+                                    )
+                                )
+
+                            process_working_actual["group"]["list"].append(
+                                {
+                                    "name": cand.get("full_name"),
+                                    "party": cand.get("party_ticker"),
+                                }
+                            )
+                            await save_state()
+                        else:
+                            # Plusieurs candidats par ligne (format colonne)
+                            for c in candidate_results_idx:
+                                cand = {
+                                    "full_name": c["candidate_name"],
+                                    "raw_value": get_row_content_at_idx(
+                                        row_content, c["score_idx"]
+                                    ),
+                                    "bbox_json": [{page_index: row_box}]
+                                }
+                                await _insert_cand_img(page, cand)
+                                if "party_ticker" in c:
+                                    cand["party_ticker"] = c["party_ticker"]
+                                print("\t\tajout du candidat:", str(cand)[:30])
+
+                                last_locality["candidates"].append(cand)
+
+                    if table_data:
+                        # voir sl'il ya des donnee residuel [EDAN page 20 example]
+                        last_rows_bbox = table.rows[-1].bbox
+                        last_row_bottom = last_rows_bbox[3]
+                        table_bottom = table.bbox[3]
+
+                        if table_bottom - last_row_bottom > 5:
+                            locality_seps_above = [
+                                r['top'] for r in page.rects
+                                if r['height'] < 3
+                                   and locality_x0 - 5 <= r[
+                                       'x0'] <= locality_x0 + 5
+                                   and r['width'] > page.width * 0.3
+                                   and r['top'] < last_row_bottom
+                            ]
+                            crop_top = max(
+                                locality_seps_above
+                            ) if locality_seps_above else last_row_bottom
+                            row_residual_box = (
+                                table.bbox[0], crop_top,
+                                table.bbox[2],
+                                table.bbox[3]
+                            )
+                            residual_row = []
+                            for idx in range(len(table.rows[0].cells)):
+                                bounds = col_x_bounds.get(idx)
+                                if bounds is None:
+                                    residual_row.append(None)
+                                    continue
+                                col_x0, col_x1 = bounds
+                                cell = (col_x0, crop_top, col_x1, table_bottom)
+                                # _get_text_within_bbox
+                                text = await _to_async(
+                                    extract_region_locality_text,
+                                    page, cell
+                                )
+
+                                residual_row.append(text if text else None)
+
+                            print(f"[{page_index + 1}page - line[residuel] {index+1}]",
+                                  residual_row)
+                            region_raw = get_row_content_at_idx(
+                                residual_row, region_idx
+                            )
+                            print("\tregion via residu", repr(region_raw)[:30])
+                            if region_raw:
+                                #_is_region, rr = True, region_raw
+                                _is_region, rr = await _to_async(is_region, region_raw)
+                                if _is_region:
+                                    print(
+                                        "\tOn est sur une nouvelle zone de region")
+
+                                    # Nouvelle région → forcément nouvelle localité :
+                                    # fermer la localité courante si elle a une valeur.
+                                    if last_region is not None and last_region != rr:
+                                        print(
+                                            "On est sur une nouvelle zone de region\n\tRegion=",
+                                            repr(rr))
+                                        if last_locality["value"] is not None:
+                                            print("on ferme la locality:", repr(
+                                                last_locality["value"][:10]),
+                                                  "...")
+                                            _consolidate_bbox(
+                                                last_locality["cords"], page_index)
+
+                                            last_locality["pil_img"].append(
+                                                await self._crop(
+                                                    page,
+                                                    last_locality["cords"],
+                                                    page_index
+                                                )
+                                            )
+                                            await _insert_locality_img(last_locality)
+
+                                        # Réinitialiser last_locality en attente du nom
+                                        print("on est sur une nouvelle locality ")
+                                        last_locality = {
+                                            "value": None,
+                                            "cords": {},
+                                            "stage": {"region": rr},
+                                            "candidates": [],
+                                            "pil_img": [],
+                                            "crop_url": None
+                                        }
+                                    else:
+                                        if last_region != rr:
+                                            print(
+                                                "On vient de trouver le nom de "
+                                                "current Region-->", rr
+                                            )
+                                            last_locality["stage"]["region"] = rr
+
+                                    last_region = rr
+
+                                    # Fill back : propager last_region aux localités
+                                    # extraites dont la région était encore None
+                                    # (localité traitée avant que son nom de région
+                                    # soit apparu dans le flux).
+                                    i = len(extracted_locality) - 1
+                                    while i >= 0:
+                                        prev = extracted_locality[i]
+                                        if prev["stage"].get("region") is None:
+                                            prev["stage"]["region"] = last_region
+                                        else:
+                                            break
+                                        i -= 1
+
+                            locality_raw = get_row_content_at_idx(
+                                residual_row, locality_idx
+                            )
+                            print("\tlocality via residu", repr(locality_raw)[:30])
+
+                            if locality_raw:
+                                if last_locality["value"] is None:
+                                    print(
+                                        "\ton vient de trouver le nom de la localite=",
+                                        repr(locality_raw[:20]), "...")
+
+                                    # Cas 2 : fill forward
+                                    last_locality["value"] = locality_raw
+                                    last_locality["stage"][
+                                        "region"] = last_region
+
+                                    process_working_actual["place"][
+                                        "list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
+                                elif locality_raw != last_locality["value"]:
+                                    # Cas 3 : vraie nouvelle localité
+                                    print("on ferme la locality:",
+                                          repr(last_locality["value"][:10]),
+                                          "...")
+                                    _consolidate_bbox(last_locality["cords"],
+                                                      page_index)
+
+                                    last_locality["pil_img"].append(
+                                        await self._crop(
+                                            page,
+                                            last_locality["cords"],
+                                            page_index
+                                        )
+                                    )
+                                    await _insert_locality_img(last_locality)
+
+                                    print("on est sur une nouvelle locality",
+                                          repr(locality_raw[:10]), "...")
+                                    last_locality = {
+                                        "value": locality_raw,
+                                        "cords": {page_index: []},
+                                        "stage": {"region": last_region},
+                                        "candidates": [],
+                                        "pil_img": [],
+                                        "crop_url": None
+                                    }
+                                    process_working_actual["place"][
+                                        "list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
+
+                            for k, i in idxs.items():
+                                if k in ("region", "locality"):
+                                    continue
+                                if i in (None, [None], -1, [-1]):
+                                    continue
+                                if last_locality["stage"].get(k) is not None:
+                                    continue
+                                s = get_row_content_at_idx(residual_row, i)
+                                if not s:
+                                    continue
+                                print("\t", repr(k), "-->", s)
+                                last_locality["stage"][k] = s
+
+                            if page_index not in last_locality["cords"]:
+                                last_locality["cords"][page_index] = []
+                            last_locality["cords"][page_index].append(row_residual_box)
+
+                            row_residual_box_single = (
+                                table.bbox[0], last_row_bottom,
+                                table.bbox[2],
+                                table.bbox[3]
+                            )
+                            if candidate_results_format == "row":
+                                # Un candidat par ligne du tableau
+                                cand = {}
+
+                                pty_idx = candidate_results_idx.get(
+                                    "party_idx")
+                                party_ticker = await _to_async(
+                                    get_text_within_bbox,
+                                    page, pty_idx, col_x_bounds, last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tparty_ticker==", party_ticker, repr(party_ticker))
+                                if party_ticker:
+                                    cand["party_ticker"] = party_ticker
+
+                                name_idx = candidate_results_idx.get(
+                                    "candidate_name_idx")
+                                full_name = await _to_async(
+                                    get_text_within_bbox,
+                                    page, name_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tfull_name==", full_name, repr(full_name))
+                                if full_name:
+                                    cand["full_name"] = full_name
+
+                                score_idx = candidate_results_idx.get(
+                                    "score_idx")
+                                raw_value = await _to_async(
+                                    get_text_within_bbox,
+                                    page, score_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\traw_value==", raw_value, repr(raw_value))
+
+                                if raw_value:
+                                    cand["raw_value"] = raw_value
+
+                                cand["bbox_json"] = [{page_index: row_residual_box_single}]
+                                await _insert_cand_img(page, cand)
+
+                                status_idx = candidate_results_idx.get(
+                                    "status_idx")
+                                status_value = await _to_async(
+                                    get_text_within_bbox,
+                                    page, status_idx, col_x_bounds,
+                                    last_row_bottom, table.bbox[3]
+                                )
+                                print("\t\tstatus_value==", status_value, repr(status_value))
+                                if status_value:
+                                    cand["winner"] = is_candidate_winner(
+                                        status_value
+                                    )
+                                print("\t\tajout du candidat:", str(cand)[:30])
+                                last_locality["candidates"].append(cand)
+
+                                process_working_actual["group"]["list"].append(
+                                    {
+                                        "name": cand.get("full_name"),
+                                        "party": cand.get("party_ticker"),
+                                    }
+                                )
+                                await save_state()
+
+                            else:
+                                # Plusieurs candidats par ligne (format colonne)
+                                for c in candidate_results_idx:
+                                    raw_value = await _to_async(
+                                        get_text_within_bbox,
+                                        page, c["score_idx"], col_x_bounds,
+                                        last_row_bottom, table.bbox[3]
+                                    )
+                                    cand = {
+                                        "full_name": c["candidate_name"],
+                                        "raw_value": raw_value,
+                                        "bbox_json": [{page_index: row_residual_box_single}]
+                                    }
+                                    await _insert_cand_img(page, cand)
+
+                                    if "party_ticker" in c:
+                                        cand["party_ticker"] = c["party_ticker"]
+                                    print("\t\tajout du candidat:", str(cand)[:30])
+
+                                    last_locality["candidates"].append(cand)
 
 
 
+                    # ── Fin de page : consolider le bbox de cette page ──
+                    # La localité peut continuer sur la page suivante.
+                    # On ne ferme PAS last_locality et on ne touche PAS
+                    # aux candidates — on consolide uniquement les cords.
+                    _consolidate_bbox(last_locality["cords"], page_index)
+                    last_locality["pil_img"].append(
+                        await self._crop(
+                            page,
+                            last_locality["cords"],
+                            page_index
+                        )
+                    )
+
+                    # Un seul tableau pertinent par page
+                    # await self.socket.emit(
+                    #     "election_processing-stream",
+                    #     f"[OK] Page {page_index + 1}",
+                    #     room=f"processing-{election_id}"
+                    # )
+                    break
+
+            # ── Fin du document : fermer la dernière localité en cours ──
 
 
+            if last_locality["value"]:
+
+                _consolidate_bbox(last_locality["cords"], page_index)
+                last_locality["pil_img"].append(
+                    await self._crop(
+                        page,
+                        last_locality["cords"],
+                        page_index
+                    )
+                )
+
+                await _insert_locality_img(last_locality)
+
+            # ── Émettre une erreur si les colonnes n'ont pas été identifiées ──
+            if columns_meta is None:
+                process_working_actual["table"]["state"] = "error"
+                await save_state()
+
+            else:
+                # Traitement final des localités extraites
+                process_working_actual["group"]["state"] = "done"
+                process_working_actual["place"]["state"] = "done"
+
+                process_working_actual["database"]["state"] = "pending"
+                await save_state()
+                try:
+                    with open("tmp.json", "w", encoding="utf-8") as f:
+                        f.write(json.dumps(extracted_locality))
+
+                    election.set(type_=columns_meta.get("election_type"), name=name)
+                    await election.update()
+                    await self.election_service.storage.set_public(
+                        str(election_id), "crops"
+                    )
+                    await self.election_service.add_extracted_archive_data(
+                        extracted_locality, election
+                    )
+                    process_working_actual["database"]["state"] = "done"
+                except:
+                    traceback.print_exc()
+                    process_working_actual["database"]["state"] = "error"
+                await save_state()
+
+        await self.election_service.rd.delete(
+            f"election:{election_id}:process_id"
+        )
+        return extracted_locality
+
+    async def archive_processing(self):
+        async for message in self.mr.subscribe(
+            MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT
+        ):
+
+            print("on vient de recevoir un message")
+            data        = message["data"]
+            room         = data["room"]
+            election_id = data["election_id"]
+            task = asyncio.create_task(
+                    self._processing_archive_task(room, election_id)
+                )
+            _id = uuid.uuid4()
+            await asyncio.sleep(0)
+
+            await self.election_service.rd.set(
+                f"election:{election_id}:process_id",
+                str(_id)
+            )
+            self._tasks[str(_id)] = task
+            print("la tache est tague avec id=", _id)
+
+            task.add_done_callback(partial(self.task_callback, _id=_id))
+
+    def task_callback(self, task, _id):
+        try:
+            task.result()
+        except:
+            print("exception caught --> task", _id)
+            traceback.print_exc()
+        finally:
+            self._tasks.pop(str(_id), None)
+
+    async def _chat_process(self, election_id, question, room):
+
+        quiz = question
+        options = None
+        if isinstance(question, dict):
+            if question.get("options"):
+                options = question["options"]
+                quiz = "\n".join(
+                    f"[{i+1}] {q['origin']} --> {q['canonic_name']}"
+                    for i, q in enumerate(options)
+                )
+
+            else:
+                quiz = question["question"]
+        question_id = await self.election_service.repo.insert_question(
+            {
+                "session_id": room,
+                "question": quiz,
+                "election_id": election_id,
+            }
+        )
+
+        await self.mr.publish(room, {"question_id": question_id})
+
+        async def _callback(resp, message_accumulator, total_prompt_tokens, total_completion_tokens):
+            answer_meta = {
+                "messages": [m.to_dict() for m in message_accumulator],
+                "meta":{
+                    "provider": resp.get("provider"),
+                    "model": resp.get("model"),
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                    "latency_ms": resp.get("latency_ms"),
+                }
+
+            }
+            answer = None
+            status = ("DONE" if resp["success"] else "FAIL")\
+                if not resp["tool_calls"] else "PENDING"
+            if status == "DONE":
+                answer = resp["result"]
+                if not isinstance(answer, str):
+                    answer = json.dumps(answer)
+            await self.election_service.repo.update_question(
+                question_id=question_id,
+                answer=None if status != "DONE" else answer,
+                answer_meta=answer_meta,
+                status=status
+            )
+            print(room,  f"quiz({question_id})-->on vient une reponse LLM")
+
+        res = await self.llm_service.answer(
+            election_id=election_id,
+            question=quiz,
+            options=options,
+            session_id=room,
+            callback=_callback
+        )
+        await self.socket.emit(
+            "chat_response",
+            res or {
+                "text": "Un problème est survenu...",
+                "display": "TEXT",
+                "error": True
+            },
+            room=room
+        )
+
+    async def chat(self):
+        async for message in self.mr.subscribe(
+            MessageBrokerChannel.CHAT
+        ):
+
+            data        = message["data"]
+            room         = data["room"]
+            election_id = data["election_id"]
+            question = data["question"]
+
+            print("on vient de recevoir une Question de chat:", question)
 
 
+            task = asyncio.create_task(
+                self._chat_process(election_id, question, room)
+                )
+            _id = uuid.uuid4()
+            self._tasks[str(_id)] = task
+            print("la tache est tague avec id=", _id)
+
+            task.add_done_callback(partial(self.task_callback, _id=_id))
+            await asyncio.sleep(0)
+
+    async def _verify_file_integrity(self):
+        while True:
+            elections = await self.election_service.get_all()
+            for el in elections:
+                await self.election_service.verify_report_integrity(
+                    el["id"]
+                )
+            await asyncio.sleep(60 * 60)
+
+    async def _cancel_election_process(self):
+        async for message in self.mr.subscribe(
+            MessageBrokerChannel.CANCEL_ELECTION_PROCESS
+        ):
+            print("on vient de recevoir un message")
+            data = message["data"]
+            election_id = data["election_id"]
+            process_id = await self.election_service.rd.get(
+                f"election:{election_id}:process_id"
+            )
+            if process_id in self._tasks:
+                self._tasks.pop(process_id).cancel()
 
     async def run(self):
+        print("Start process")
         await asyncio.gather(
             self.archive_processing(),
+            self.chat(),
+            self._verify_file_integrity(),
+
+            self._cancel_election_process()
         )

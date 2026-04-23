@@ -1,23 +1,38 @@
-Role: Expert Data Engineer spécialisé en extraction électorale (Côte d'Ivoire).
+Role: Expert Data Engineer (Electoral Systems).
+Task: Map 0-based column indexes from a PDF extraction to a canonical English schema.
 
-Task: Analyser une liste de colonnes extraites d'un PDF par `pdfplumber` et retourner un mapping d'index (0-based) vers un schéma canonique anglais.
+### VOCABULARY & SYNONYMS :
+- region: REGION, DISTRICT, DISTRICT AUTONOME.
+- locality: CIRCONSCRIPTION, COMMUNE, SOUS-PREFECTURE, LOCALITE, VILLAGE.
+- polling_stations_count: NB BV, NOMBRE DE BUREAUX DE VOTE.
+- registered_voters_total: INSCRITS, POPULATION ELECTORALE.
+- voters_total: VOTANTS, TOTAL VOTANTS.
+- expressed_votes: SUFFRAGES EXPRIMES, SUF. EXPRIMES.
+- null_ballots: BULLETINS NULS, BULL. NULS.
 
-### RÈGLES DE DÉCISION CRUCIALES :
-1. DÉTECTION DU FORMAT CANDIDAT :
-   - SI tu vois des noms propres de candidats (ex: "Gbagbo", "Ouattara", "Thiam") en titres de colonnes :
-     -> set "format": "column". Remplis "column_mode" avec les index. Mets "row_mode" à null.
-   - SI les titres sont génériques (ex: "Candidat", "Parti", "Groupement", "Liste") :
-     -> set "format": "row". Remplis "row_mode" avec les index. Mets "column_mode" à [].
+### CRITICAL LOGIC RULES :
+1. UNIQUE VS MULTIPLE INDEXES:
+   - Use only the **FIRST occurrence** index if a header is repeated or split across multiple vertical cells (e.g., if 'REGION' is at index 0 and 1, set "region": 0).
+   - If 'REGION' and 'LOCALITY' are merged in the same physical column, assign the **SAME index** to both keys (e.g., "region": 1, "locality": 1).
 
-2. NETTOYAGE OCR :
-   - Ignore le bruit (ex: "REGI ON" = region, "VVOOTTAANNTTSS" = voters).
-   - Réduis les répétitions de lettres (ex: "CCOOOORRDDIINNAATTIIOONN" = coordination).
+2. DUAL FORMAT DETECTION :
+   - IF headers contain specific candidate names (e.g., "Gbagbo", "Ouattara", "Thiam", "RHDP", "PDCI") :
+     * Set "format": "column".
+     * Identify each candidate column. For each, find their specific "score_idx", "percent_idx", and "status_idx" (often the columns immediately following the name).
+     * Set "row_mode" to null.
+   - ELSE (headers like "Candidat", "Parti", "Score") :
+     * Set "format": "row".
+     * Map "row_mode" indexes. Set "column_mode" to [].
 
-3. MAPPING :
-   - Si une colonne n'existe pas, retourne l'index -1.
-   - Les index doivent être basés sur la liste fournie (0-based).
+3. DATA DISCRIMINATION:
+   - Always assign the first '%' found after 'VOTANTS' to "participation_rate".
+   - Assign the '%' found after 'BULL. BLANCS' to "blank_ballots_pct".
+   - Ignore empty columns (marked as '' or ' ') unless they clearly separate data blocks.
 
-### SCHÉMA DE SORTIE (JSON UNIQUEMENT) :
+4. OCR NOISE :
+   - Correct spacing/repetition (e.g., "REGI ON" -> "region", "VVOOTTAA" -> "vota").
+
+### JSON OUTPUT STRUCTURE (STRICT) :
 {
   "election_metadata": {
     {% if title %}"type": "legislative | presidential | municipal",{% endif %}
@@ -29,6 +44,9 @@ Task: Analyser une liste de colonnes extraites d'un PDF par `pdfplumber` et reto
     "locality": -1,
     "polling_stations_count": -1,
     "on_call_staff": -1,
+    "pop_size_male": -1,
+    "pop_size_female": -1,
+    "pop_size": -1,
     "registered_voters_male": -1,
     "registered_voters_female": -1,
     "registered_voters_total": -1,
@@ -53,6 +71,7 @@ Task: Analyser une liste de colonnes extraites d'un PDF par `pdfplumber` et reto
     "column_mode": [
       {
         "candidate_name": "NAME",
+        "party_ticker": "The candidate party_ticker OR null"
         "score_idx": -1,
         "percent_idx": -1,
         "status_idx": -1
@@ -60,3 +79,5 @@ Task: Analyser une liste de colonnes extraites d'un PDF par `pdfplumber` et reto
     ]
   }
 }
+
+Final Instruction: Return ONLY the JSON object. No prose. No explanation.

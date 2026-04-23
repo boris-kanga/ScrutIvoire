@@ -1,11 +1,11 @@
 import time
+from typing import AsyncGenerator
 
 import httpx
 
-from src.infrastructure.llms.providers import (
-    LLMProvider,
-)
-from src.domain.llm import LLMRequest, LLMResponse
+from src.infrastructure.llms.providers import LLMProvider
+from src.infrastructure.llms.providers._mixin import OpenAICompatibleMixin
+from src.domain.llm import LLMRequest, LLMResponse, LLMStreamChunk
 from src.core.logger import get_logger
 from src.core.config import LLM_PROVIDERS
 
@@ -14,18 +14,17 @@ logger = get_logger(__name__)
 
 
 MODELS = {
-    "fast":    ("llama-3.1-8b-instant", False, 2),
-    "main":    ("meta-llama/llama-4-scout-17b-16e-instruct", False, 1),
+    "fast":  ("llama-3.1-8b-instant", False, 2),
+    "main":  ("meta-llama/llama-4-scout-17b-16e-instruct", False, 1),
     "large": ("meta-llama/llama-4-scout-17b-16e-instruct", False, 1),
-    # Type A principal
-
 }
 
 
-class GroqProvider(LLMProvider):
+class GroqProvider(OpenAICompatibleMixin, LLMProvider):
     """
     Provider Groq — OpenAI-compatible API.
     1M contexte, idéal pour Type A (analyses textuelles).
+    Supporte le tool calling et le streaming.
     """
 
     name = "groq"
@@ -37,36 +36,23 @@ class GroqProvider(LLMProvider):
             raise ValueError("GROQ_KEY manquante dans la config")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
+        if request.stream:
+            raise ValueError(
+                "Utilisez stream() pour le streaming, pas complete()"
+            )
+
         t0 = time.monotonic()
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type":  "application/json",
-        }
-        body = {
-            "model":       request.model,
-            "messages":    [{"role": m.role, "content": m.content}
-                            for m in request.messages],
-            "temperature": request.temperature,
-            "max_tokens":  request.max_tokens,
-        }
+        body = self._build_body(request)
 
         try:
             async with httpx.AsyncClient(timeout=request.timeout) as client:
-                resp = await client.post(self.BASE_URL, headers=headers, json=body)
+                resp = await client.post(
+                    self.BASE_URL, headers=self._headers(), json=body
+                )
                 resp.raise_for_status()
                 data = resp.json()
 
-            content = data["choices"][0]["message"]["content"]
-            usage   = data.get("usage", {})
-            return LLMResponse(
-                content           = content,
-                provider          = self.name,
-                model             = request.model,
-                prompt_tokens     = usage.get("prompt_tokens", 0),
-                completion_tokens = usage.get("completion_tokens", 0),
-                latency_ms        = int((time.monotonic() - t0) * 1000),
-                success           = True,
-            )
+            return self._parse_response(data, request, t0)
 
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
@@ -80,3 +66,9 @@ class GroqProvider(LLMProvider):
         except Exception as e:
             logger.exception("Groq erreur inattendue")
             return self._error_response(str(e))
+
+    async def stream(self, request: LLMRequest) -> AsyncGenerator[LLMStreamChunk, None]:
+        """Streaming SSE — async for chunk in provider.stream(request)."""
+        request.stream = True
+        async for chunk in self._stream(request):
+            yield chunk
