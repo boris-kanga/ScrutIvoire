@@ -1,5 +1,4 @@
 -- Activer l'extension pour générer des UUID
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. USERS & ROLES
 CREATE TABLE IF NOT EXISTS users  (

@@ -1,0 +1,26 @@
+name: CD - Deploy to VPS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/kb/ScrutIvoire
+            
+            git pull origin main
+            
+            docker rm -f $(docker ps -aq)
+            docker-compose --env-file config/.env up -d --build --remove-orphan

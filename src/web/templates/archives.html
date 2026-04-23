@@ -451,7 +451,7 @@
 
 <script src="{{ url_for('static', filename='js/pdfReader.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stream-archive.js') }}"></script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N40OKI80tFidF+rqTFKGPoWFQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 
     $("#confirm").click(()=>{
@@ -490,9 +490,8 @@
 
     async function getFileHash(file) {
         const arrayBuffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
+        const hashHex = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
         return hashHex;
     }
 

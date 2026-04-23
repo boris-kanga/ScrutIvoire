@@ -1,0 +1,69 @@
+services:
+  app-api:
+    build: .
+    container_name: app-api
+    command: python main.py web
+    ports:
+      - "5005:5005"
+    env_file:
+      - config/.env
+    depends_on:
+      - db
+      - redis
+      - minio
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  app-worker:
+    build: .
+    container_name: app-worker
+    command: python main.py worker
+    env_file:
+      - config/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - db
+      - redis
+      - minio
+
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - config/.env
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PWD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    env_file:
+      - config/.env
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console Web
+    volumes:
+      - minio_data:/data
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+volumes:
+  postgres_data:
+  minio_data:
