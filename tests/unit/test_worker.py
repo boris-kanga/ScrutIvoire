@@ -49,7 +49,7 @@ async def test_treatment_of_an_archive():
                     'prompt_tokens': 893, 'completion_tokens': 871,
                     'latency_ms': 5564}
 
-    llm_repo_mock.run = mock.AsyncMock(
+    llm_repo_mock.detect_columns = mock.AsyncMock(
         side_effect=[llm_response, {"success": False}]
     )
 
@@ -59,11 +59,17 @@ async def test_treatment_of_an_archive():
     service_mock.add_extracted_archive_data = mock.AsyncMock(
         return_value=None
     )
+    service_mock.set_archive_process_working = mock.AsyncMock(
+        return_value=None
+    )
+    service_mock.storage.upload = mock.AsyncMock(
+        return_value=None
+    )
     worker = Worker(
         election_service=service_mock,
         msg_broker=msg_broker,
         socket=socket_mock,
-        llm_repo=llm_repo_mock,
+        llm_service=llm_repo_mock,
     )
 
     extracted_locality = await worker._processing_archive_task("test", "test")
