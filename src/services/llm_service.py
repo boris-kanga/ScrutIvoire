@@ -3,6 +3,7 @@ import os
 import re
 
 from src.core.config import LLM_DB_URI, LLM_SLIDING_WINDOW_DEEP, WORK_DIR
+from src.core.logger import get_logger
 from src.domain.llm import LLMMessage
 from src.infrastructure.database.pgdb import PgDB
 from src.repository.entity_resolution import EntityResolution, EntityResolver, \
@@ -12,6 +13,9 @@ from src.utils.tools import cache
 
 
 SQL_INJECTED_TAG = "[SYSTEM_CONTEXT : SQL_SCHEMA]"
+
+
+logger = get_logger(__name__)
 
 
 class LLMService:
@@ -57,7 +61,7 @@ class LLMService:
             return json.loads(f.read())
 
     async def dispatch_tool(self, func_name, args, election_id, source_context):
-        print("le llm demande d'appeler:", func_name, args, election_id)
+        logger.info("le llm demande d'appeler:", func_name, args, election_id)
         if func_name == "fuzzy_wuzzy":
             if not args.get("entity") or not args.get("category"):
                 return "REQUIRED `entity` and `category`"
@@ -91,7 +95,7 @@ class LLMService:
                 res = await self.llm_db.run_query(query)
                 return {"ok": True, "result": res, "query": args.get("query")}
             except Exception as e:
-                print("\tLa requete a echoue:", e)
+                logger.error("\tLa requete a echoue:", e)
                 return {
                     "ok": False, "error": str(e),
                     "query": args.get("query")
@@ -187,9 +191,6 @@ class LLMService:
             except json.JSONDecodeError:
                 pass
 
-        for h in history:
-            print("\n-->",h.role, "\n\t", h.content[:200])
-
         base = self.llm_repo.get_prompt(
             task_type="chat",
             system_arg=dict(election_id=election_id)
@@ -205,6 +206,7 @@ class LLMService:
                 )
             ]
         elif not has_sql_injected:
+            logger.info("on injecte le sql schema")
             history[-1].content = self.llm_repo.get_prompt(
                 j2_file="chat.sql_schema_injection",
                 output=history[-1].content,
@@ -225,8 +227,7 @@ class LLMService:
             total_prompt_tokens += result["prompt_tokens"]
             total_completion_tokens += result["completion_tokens"]
 
-        print("\n\n")
-        print(result)
+        logger.info("la reponse du premier tour obtenu")
         if callback is not None:
             await callback(
                     result,
@@ -249,7 +250,10 @@ class LLMService:
             "success": False,
             "tool_calls": []
         }
+        tour_index = 1
         while result["tool_calls"]:
+            if tour_index > 1:
+                logger.info("[Tour]", tour_index, "Reponse obtenu")
             # Exécuter les outils demandés
             tool_results = []
             for tc in result["tool_calls"]:
@@ -283,6 +287,7 @@ class LLMService:
                 # after tools
                 if isinstance(output, EntityResolver):
                     if output.ambiguous:
+                        logger.info("On va retourner des Options:", output)
                         any_options.append(
                             {
                                 "tool_id": tc["id"],
@@ -320,6 +325,7 @@ class LLMService:
                                     total_prompt_tokens=total_prompt_tokens,
                                     total_completion_tokens=total_completion_tokens
                                 )
+                            logger.info("Succession d'erreur donc on arrete le massacre")
                             return error_msg["result"]
 
                     if not output.get("result"):
@@ -332,12 +338,13 @@ class LLMService:
                                     total_prompt_tokens=total_prompt_tokens,
                                     total_completion_tokens=total_completion_tokens
                                 )
+                            logger.info("Succession de sql qui retourne vide, on arrete.")
                             return error_msg["result"]
 
                 tool_results.append((tc["id"], tc["name"], tc["arguments"], output))
 
             # Ajouter le tour assistant + résultats dans l'historique
-            print("le retour des outils:", tool_results)
+            logger.info("le retour des outils:", tool_results)
             message_accumulator.append(LLMMessage(
                 role="assistant",
                 content="",
@@ -385,8 +392,6 @@ class LLMService:
                 total_prompt_tokens += result["prompt_tokens"]
                 total_completion_tokens += result["completion_tokens"]
 
-            print("\n\n")
-            print(result)
             if callback is not None:
                 await callback(
                     result,
@@ -410,6 +415,7 @@ class LLMService:
             circ_ids: set[int],
             cand_ids: set[int],
     ):
+        logger.info("calcul des sources:", circ_ids, cand_ids)
 
         total = len(circ_ids) + len(cand_ids)
         if total == 0:

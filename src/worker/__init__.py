@@ -10,6 +10,7 @@ from typing import Dict, Any
 import pdfplumber
 from PIL import Image
 
+from src.core.logger import get_logger
 from src.infrastructure.database.pgdb import PgDB
 from src.infrastructure.database.redisdb import RedisDB
 
@@ -36,6 +37,10 @@ from src.worker.archive_utils import extract_election_name_from_pdf_page_1, \
 
 
 PADDING = 5
+
+logger = get_logger(__name__)
+
+
 
 
 async def _to_async(func, *args, **kwargs):
@@ -90,8 +95,7 @@ class Worker:
             columns, name
         )
 
-        print("llm->", response)
-        print("columns:", columns)
+        logger.info("[llm] Retrieve data", response, "From columns got:", columns)
         fields = [
             "region",
             "locality",
@@ -208,10 +212,10 @@ class Worker:
 
 
     async def _processing_archive_task(self, room, election_id):
-        print("debut du processing de election id", room, election_id)
+        logger.info("debut du processing de election id", room, election_id)
         election = await self.election_service.get(election_id)
         if not election:
-            print(election, "election pas trouver")
+            logger.info(election, "election pas trouver")
             return []
         _redis_key = "process-" + str(election_id)
 
@@ -249,7 +253,7 @@ class Worker:
             )
         await save_state()
 
-        print("going to work for election:", election)
+        logger.info("going to work for election:", election)
         table_settings = {
             "vertical_strategy":        "lines",
             "horizontal_strategy":      "lines",
@@ -382,6 +386,7 @@ class Worker:
             # )
             async for page in _async_read_pdf(filename):
                 page_index  += 1
+                logger.info("[Page]", page_index)
 
                 # await self.socket.emit(
                 #     "election_processing-stream",
@@ -483,7 +488,7 @@ class Worker:
                 await save_state()
                 async for table in _loop(page.find_tables, table_settings=table_settings):
                     if _current_table_index < table_index:
-                        print("il s'agit ne sagit pas du table")
+                        logger.info("Il s'agit ne sagit pas du table")
                         # Sauter les tableaux avant celui identifié lors de la détection des colonnes
                         continue
 
@@ -527,11 +532,11 @@ class Worker:
                                         min(col_x_bounds[idx][1], cell[2])
                                     )
 
-                        print(f"[{page_index+1}page - line {index}]", table_data[index])
+                        logger.info(f"[{page_index+1}page - line {index}]", table_data[index])
 
                         # ── Sauter les lignes d'en-tête ──
                         if index < index_row:
-                            print("il s'agit du ligne d'entete du tableau")
+                            logger.info("il s'agit du ligne d'entete du tableau")
                             # to don't consider the table header base on index_row calculated a few top
                             last_row_y = row.bbox[1]
                             continue
@@ -571,7 +576,7 @@ class Worker:
                         if region_raw and re.search(
                             r"\b(total|pourcentage|%)\b", region_raw, flags=re.IGNORECASE
                         ):
-                            print("\tline total skip")
+                            logger.info("\tline total skip")
                             continue
 
                         # ── Skip : ligne de total sur localité ──
@@ -584,7 +589,7 @@ class Worker:
                             )
                             or re.search(r"^\s*\d+[\s\d]*$", locality_raw)
                         ):
-                            print("line total skip locality")
+                            logger.info("line total skip locality")
                             continue
 
                         # Détecter changement de région via les séparateurs de page.rects
@@ -605,7 +610,7 @@ class Worker:
 
                         if region_sep_crossed:
                             # Nouvelle région — fermer la localité courante
-                            print("Nouvelle region avec region_sep_crossed")
+                            logger.info("Nouvelle region avec region_sep_crossed")
                             if last_locality["value"] is not None:
                                 _consolidate_bbox(last_locality["cords"], page_index)
                                 last_locality["pil_img"].append(
@@ -629,7 +634,7 @@ class Worker:
                             last_region = None
 
                         elif locality_sep_crossed:
-                            print("Nouvelle locality avec locality_sep_crossed")
+                            logger.info("Nouvelle locality avec locality_sep_crossed")
                             # Nouvelle localité — sera confirmée quand locality_raw sera non vide
                             if last_locality["value"] is not None:
                                 _consolidate_bbox(last_locality["cords"], page_index)
@@ -667,7 +672,7 @@ class Worker:
                         # cell_region non-None + r vide     → saut de page, la région
                         #   continue depuis la page précédente : on garde last_region.
                         if cell_region is not None and region_raw:
-                            print("On est sur une nouvelle zone de region")
+                            logger.info("On est sur une nouvelle zone de region")
                             # _is_region, rr = True, region_raw
                             _is_region, rr = await _to_async(is_region, region_raw)
                             if _is_region:
@@ -675,9 +680,9 @@ class Worker:
                                 # Nouvelle région → forcément nouvelle localité :
                                 # fermer la localité courante si elle a une valeur.
                                 if last_region is not None and last_region != rr:
-                                    print("On est sur une nouvelle zone de region\n\tRegion=", rr)
+                                    logger.info("On est sur une nouvelle zone de region\n\tRegion=", rr)
                                     if last_locality["value"] is not None:
-                                        print("on ferme la locality:", repr(last_locality["value"][:10]), "...")
+                                        logger.info("on ferme la locality:", repr(last_locality["value"][:10]), "...")
                                         _consolidate_bbox(last_locality["cords"], page_index)
 
                                         last_locality["pil_img"].append(
@@ -691,7 +696,7 @@ class Worker:
                                         await _insert_locality_img(last_locality)
 
                                     # Réinitialiser last_locality en attente du nom
-                                    print("on est sur une nouvelle locality ")
+                                    logger.info("on est sur une nouvelle locality ")
                                     last_locality = {
                                         "value":      None,
                                         "cords":      {},
@@ -702,7 +707,7 @@ class Worker:
                                     }
                                 else:
                                     if last_region != rr:
-                                        print(
+                                        logger.info(
                                             "On vient de trouver le nom de "
                                             "current Region-->", rr
                                         )
@@ -750,7 +755,7 @@ class Worker:
                         #    nom) — rien à faire.
                         if cell_locality is not None and locality_raw:
                             if last_locality["value"] is None:
-                                print("\ton vient de trouver le nom de la localite=", repr(locality_raw[:20]), "...")
+                                logger.info("\ton vient de trouver le nom de la localite=", repr(locality_raw[:20]), "...")
 
                                 # Cas 2 : fill forward
                                 last_locality["value"] = locality_raw
@@ -784,7 +789,7 @@ class Worker:
                                             break
                                 if not is_fake_locality:
                                     # Cas 3 : vraie nouvelle localité
-                                    print("on ferme la locality:",
+                                    logger.info("on ferme la locality:",
                                           repr(last_locality["value"][:10]), "...")
                                     _consolidate_bbox(last_locality["cords"], page_index)
 
@@ -797,7 +802,7 @@ class Worker:
                                     )
                                     await _insert_locality_img(last_locality)
 
-                                    print("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
+                                    logger.info("on est sur une nouvelle locality", repr(locality_raw[:10]), "...")
                                     last_locality = {
                                         "value":      locality_raw,
                                         "cords":      {page_index: []},
@@ -833,7 +838,7 @@ class Worker:
                             s = get_row_content_at_idx(row_content, i)
                             if not s:
                                 continue
-                            print("\t", repr(k), "-->", s)
+                            logger.info("\t", repr(k), "-->", s)
                             last_locality["stage"][k] = s
 
                         # ── Accumuler le bbox de cette ligne ──
@@ -866,7 +871,7 @@ class Worker:
                             cand["bbox_json"] = [{page_index: row_box}]
 
                             await _insert_cand_img(page, cand)
-                            print("\t\tajout du candidat:", str(cand)[:30])
+                            logger.info("\t\tajout du candidat:", str(cand)[:30])
                             last_locality["candidates"].append(cand)
                             status_idx = candidate_results_idx.get("status_idx")
                             if status_idx not in (-1, None):
@@ -882,7 +887,7 @@ class Worker:
                                     "party": cand.get("party_ticker"),
                                 }
                             )
-                            await save_state()
+                            # await save_state()
                         else:
                             # Plusieurs candidats par ligne (format colonne)
                             for c in candidate_results_idx:
@@ -896,7 +901,7 @@ class Worker:
                                 await _insert_cand_img(page, cand)
                                 if "party_ticker" in c:
                                     cand["party_ticker"] = c["party_ticker"]
-                                print("\t\tajout du candidat:", str(cand)[:30])
+                                logger.info("\t\tajout du candidat:", str(cand)[:30])
 
                                 last_locality["candidates"].append(cand)
 
@@ -939,27 +944,27 @@ class Worker:
 
                                 residual_row.append(text if text else None)
 
-                            print(f"[{page_index + 1}page - line[residuel] {index+1}]",
+                            logger.info(f"[{page_index + 1}page - line[residuel] {index+1}]",
                                   residual_row)
                             region_raw = get_row_content_at_idx(
                                 residual_row, region_idx
                             )
-                            print("\tregion via residu", repr(region_raw)[:30])
+                            logger.info("\tregion via residu", repr(region_raw)[:30])
                             if region_raw:
                                 #_is_region, rr = True, region_raw
                                 _is_region, rr = await _to_async(is_region, region_raw)
                                 if _is_region:
-                                    print(
+                                    logger.info(
                                         "\tOn est sur une nouvelle zone de region")
 
                                     # Nouvelle région → forcément nouvelle localité :
                                     # fermer la localité courante si elle a une valeur.
                                     if last_region is not None and last_region != rr:
-                                        print(
+                                        logger.info(
                                             "On est sur une nouvelle zone de region\n\tRegion=",
                                             repr(rr))
                                         if last_locality["value"] is not None:
-                                            print("on ferme la locality:", repr(
+                                            logger.info("on ferme la locality:", repr(
                                                 last_locality["value"][:10]),
                                                   "...")
                                             _consolidate_bbox(
@@ -975,7 +980,7 @@ class Worker:
                                             await _insert_locality_img(last_locality)
 
                                         # Réinitialiser last_locality en attente du nom
-                                        print("on est sur une nouvelle locality ")
+                                        logger.info("on est sur une nouvelle locality ")
                                         last_locality = {
                                             "value": None,
                                             "cords": {},
@@ -986,7 +991,7 @@ class Worker:
                                         }
                                     else:
                                         if last_region != rr:
-                                            print(
+                                            logger.info(
                                                 "On vient de trouver le nom de "
                                                 "current Region-->", rr
                                             )
@@ -1010,11 +1015,11 @@ class Worker:
                             locality_raw = get_row_content_at_idx(
                                 residual_row, locality_idx
                             )
-                            print("\tlocality via residu", repr(locality_raw)[:30])
+                            logger.info("\tlocality via residu", repr(locality_raw)[:30])
 
                             if locality_raw:
                                 if last_locality["value"] is None:
-                                    print(
+                                    logger.info(
                                         "\ton vient de trouver le nom de la localite=",
                                         repr(locality_raw[:20]), "...")
 
@@ -1034,7 +1039,7 @@ class Worker:
                                     await save_state()
                                 elif locality_raw != last_locality["value"]:
                                     # Cas 3 : vraie nouvelle localité
-                                    print("on ferme la locality:",
+                                    logger.info("on ferme la locality:",
                                           repr(last_locality["value"][:10]),
                                           "...")
                                     _consolidate_bbox(last_locality["cords"],
@@ -1049,7 +1054,7 @@ class Worker:
                                     )
                                     await _insert_locality_img(last_locality)
 
-                                    print("on est sur une nouvelle locality",
+                                    logger.info("on est sur une nouvelle locality",
                                           repr(locality_raw[:10]), "...")
                                     last_locality = {
                                         "value": locality_raw,
@@ -1079,7 +1084,7 @@ class Worker:
                                 s = get_row_content_at_idx(residual_row, i)
                                 if not s:
                                     continue
-                                print("\t", repr(k), "-->", s)
+                                logger.info("\t", repr(k), "-->", s)
                                 last_locality["stage"][k] = s
 
                             if page_index not in last_locality["cords"]:
@@ -1101,7 +1106,7 @@ class Worker:
                                     get_text_within_bbox,
                                     page, pty_idx, col_x_bounds, last_row_bottom, table.bbox[3]
                                 )
-                                print("\t\tparty_ticker==", party_ticker, repr(party_ticker))
+                                logger.info("\t\tparty_ticker==", party_ticker, repr(party_ticker))
                                 if party_ticker:
                                     cand["party_ticker"] = party_ticker
 
@@ -1112,7 +1117,7 @@ class Worker:
                                     page, name_idx, col_x_bounds,
                                     last_row_bottom, table.bbox[3]
                                 )
-                                print("\t\tfull_name==", full_name, repr(full_name))
+                                logger.info("\t\tfull_name==", full_name, repr(full_name))
                                 if full_name:
                                     cand["full_name"] = full_name
 
@@ -1123,7 +1128,7 @@ class Worker:
                                     page, score_idx, col_x_bounds,
                                     last_row_bottom, table.bbox[3]
                                 )
-                                print("\t\traw_value==", raw_value, repr(raw_value))
+                                logger.info("\t\traw_value==", raw_value, repr(raw_value))
 
                                 if raw_value:
                                     cand["raw_value"] = raw_value
@@ -1138,12 +1143,12 @@ class Worker:
                                     page, status_idx, col_x_bounds,
                                     last_row_bottom, table.bbox[3]
                                 )
-                                print("\t\tstatus_value==", status_value, repr(status_value))
+                                logger.info("\t\tstatus_value==", status_value, repr(status_value))
                                 if status_value:
                                     cand["winner"] = is_candidate_winner(
                                         status_value
                                     )
-                                print("\t\tajout du candidat:", str(cand)[:30])
+                                logger.info("\t\tajout du candidat:", str(cand)[:30])
                                 last_locality["candidates"].append(cand)
 
                                 process_working_actual["group"]["list"].append(
@@ -1171,7 +1176,7 @@ class Worker:
 
                                     if "party_ticker" in c:
                                         cand["party_ticker"] = c["party_ticker"]
-                                    print("\t\tajout du candidat:", str(cand)[:30])
+                                    logger.info("\t\tajout du candidat:", str(cand)[:30])
 
                                     last_locality["candidates"].append(cand)
 
@@ -1254,7 +1259,7 @@ class Worker:
             MessageBrokerChannel.PROCESSING_ELECTION_RAPPORT
         ):
 
-            print("on vient de recevoir un message")
+            logger.info("on vient de recevoir un message")
             data        = message["data"]
             room         = data["room"]
             election_id = data["election_id"]
@@ -1269,15 +1274,17 @@ class Worker:
                 str(_id)
             )
             self._tasks[str(_id)] = task
-            print("la tache est tague avec id=", _id)
+            logger.info("la tache est tague avec id=", _id)
 
             task.add_done_callback(partial(self.task_callback, _id=_id))
 
     def task_callback(self, task, _id):
         try:
             task.result()
-        except:
-            print("exception caught --> task", _id)
+        except Exception as ex:
+            logger.info("exception caught --> task", _id)
+            logger.exception(ex)
+
             traceback.print_exc()
         finally:
             self._tasks.pop(str(_id), None)
@@ -1331,7 +1338,7 @@ class Worker:
                 answer_meta=answer_meta,
                 status=status
             )
-            print(room,  f"quiz({question_id})-->on vient une reponse LLM")
+            logger.info(room,  f"quiz({question_id})-->on vient une reponse LLM")
 
         res = await self.llm_service.answer(
             election_id=election_id,
@@ -1360,7 +1367,7 @@ class Worker:
             election_id = data["election_id"]
             question = data["question"]
 
-            print("on vient de recevoir une Question de chat:", question)
+            logger.info("on vient de recevoir une Question de chat:", question)
 
 
             task = asyncio.create_task(
@@ -1368,7 +1375,7 @@ class Worker:
                 )
             _id = uuid.uuid4()
             self._tasks[str(_id)] = task
-            print("la tache est tague avec id=", _id)
+            logger.info("la tache est tague avec id=", _id)
 
             task.add_done_callback(partial(self.task_callback, _id=_id))
             await asyncio.sleep(0)
@@ -1386,7 +1393,7 @@ class Worker:
         async for message in self.mr.subscribe(
             MessageBrokerChannel.CANCEL_ELECTION_PROCESS
         ):
-            print("on vient de recevoir un message")
+            logger.info("on vient de recevoir un message")
             data = message["data"]
             election_id = data["election_id"]
             process_id = await self.election_service.rd.get(
@@ -1396,7 +1403,7 @@ class Worker:
                 self._tasks.pop(process_id).cancel()
 
     async def run(self):
-        print("Start process")
+        logger.info("Start process")
         await asyncio.gather(
             self.archive_processing(),
             self.chat(),

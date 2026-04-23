@@ -11,6 +11,7 @@ from kb_tools.tools import remove_accent_from_text
 
 from thefuzz import process, fuzz
 
+from src.core.logger import get_logger
 from src.domain.election import Election, Document, DocumentType, \
     LocalityStagingResult, int_parser
 from src.infrastructure.database.redisdb import RedisDB
@@ -27,6 +28,10 @@ from src.repository.entity_resolution import EntityResolution
 from src.utils.tools import value_parser, calculer_hash
 
 REPORT_FILE_NAME = "rapport.pdf"
+
+
+logger = get_logger(__name__)
+
 
 class ElectionService:
 
@@ -187,7 +192,7 @@ class ElectionService:
                 }
                 for r in refs
             ]
-            print(locality["stage"], locality["value"])
+
             try:
                 staging = LocalityStagingResult(
                     **locality["stage"],
@@ -196,6 +201,9 @@ class ElectionService:
                 )
             except TypeError:
                 locality_skipped.append(locality)
+                logger.info("On skip la localite pour imcompletude de donnee.")
+                # Cas https://cei.ci/wp-content/uploads/2023/09/Municipales_2023.pdf
+                # SARHALA
                 continue
 
             locality_staging.append(staging)

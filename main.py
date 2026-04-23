@@ -4,6 +4,11 @@ import click
 
 from src.domain.user import User, Role
 
+from src.core.logger import setup_logging
+
+
+setup_logging()
+
 
 @click.group()
 def cli():

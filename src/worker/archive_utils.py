@@ -111,11 +111,11 @@ def map_columns_force(columns):
 
     other_index = max(v for v in res.values() if v) + 1
     other_columns = columns[other_index:]
-    print(other_columns)
+
     candidate_results_format = "column"
     candidate_results = None
     if re.search(r"(group|part)", " ".join(other_columns), flags=re.I):
-        print("row")
+
         candidate_results_format = "row"
 
         # TODO: parse column for case each line is about an candidate
