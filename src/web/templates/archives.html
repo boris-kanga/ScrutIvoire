@@ -2,12 +2,14 @@
 {% from "macros.html" import logo %}
 {% from "macros_admin.html" import nav %}
 
+{% from "macros_admin.html" import autoDisconnect %}
+
 {% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
 
 
 {% block title %}Galerie d'Archives Électorales{% endblock %}
 {% block content %}
-
+{{ autoDisconnect() }}
 <style>
     body { font-family: 'Inter', sans-serif; }
     .material-symbols-outlined {
@@ -56,30 +58,78 @@
         position: absolute; top:0; left:0;
 
     }
+
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        vertical-align: middle;
+    }
+    .scanline {
+        height: 4px;
+        background: linear-gradient(to bottom, rgba(0, 123, 255, 0), rgba(0, 123, 255, 1), rgba(0, 123, 255, 0));
+        box-shadow: 0 0 15px rgba(0, 123, 255, 0.8);
+        position: absolute;
+        width: 100%;
+        top: 0;
+        animation: scan 4s linear infinite;
+    }
+    @keyframes scan {
+        0% { top: 0%; }
+        100% { top: 100%; }
+    }
+    @keyframes pulse-soft {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+    .animate-pulse-soft {
+        animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .stepper-line {
+        position: absolute;
+        left: 19px;
+        top: 40px;
+        bottom: -10px;
+        width: 2px;
+        background: #e2e8f0;
+    }
+    .stepper-line-active {
+        background: #006c52;
+    }
+
+    .not-started{
+        opacity: 0.35
+    }
+    #confirm:disabled{
+        background: #ccc;
+        opacity: 0.3;
+        pointer-events: none;
+    }
+
+    #confirm{
+        background: orange;
+    }
+
+
 </style>
 <input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
 {{ nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="archives") }}
 
-<header id="header-new" class="kb-hidden fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white dark:bg-slate-950/80 backdrop-blur-xl shadow-sm">
+<header id="header-new"
+        class="kb-hidden fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white dark:bg-slate-950/80 backdrop-blur-xl shadow-sm">
     <div class="flex items-center gap-4">
-        <button onclick="reset_new_archive()" class="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
+        <button onclick="reset_new_archive()"
+                class="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
             <span class="material-symbols-outlined">arrow_back</span>
             <span>Annuler</span>
         </button>
     </div>
     <div class="flex items-center gap-3">
-        <h1 class="text-slate-900 font-bold tracking-tight text-lg">Ingestion
-            d'Archive Officielle : PV_ZONE_CENTRE.pdf</h1>
-        <div class="flex items-center gap-1.5 px-3 py-1 bg-tertiary-container/20 rounded-full text-tertiary text-xs font-bold uppercase tracking-wider animate-pulse-soft">
-            <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span>
-            </span>
-            ANALYSE EN COURS
-        </div>
+        <h1 id="filename"
+            class="text-slate-900 font-bold tracking-tight text-lg">...pdf</h1>
+
     </div>
     <div class="flex items-center gap-4">
-        <button class="px-5 py-2 bg-slate-100 text-slate-400 font-bold rounded-lg cursor-not-allowed text-sm">
+        <button id="confirm" class=" px-5 py-2 font-bold rounded-lg text-sm" disabled>
             Confirmer l'Archivage
         </button>
         <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden ring-2 ring-white shadow-sm">
@@ -90,7 +140,8 @@
     </div>
 </header>
 
-<header id="header-normal" class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
+<header id="header-normal"
+        class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
     <div class="flex items-center gap-4 flex-1">
         <label class="lg:hidden text-slate-600 cursor-pointer p-2 hover:bg-surface-container-low rounded-lg transition-colors"
                for="mobile-menu-toggle">
@@ -119,10 +170,12 @@
 
 <!-- SideNavBar -->
 <!-- Main Content Area -->
-<main style="position:relative" id="main" class="lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden">
+<main style="position:relative" id="main"
+      class="lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden">
     <!-- TopAppBar -->
     <svg class="dragger-signal">
-        <rect rx="10" ry="10" stroke-width="4"  stroke-dasharray="10, 10" fill="none" stroke="#954a00" />
+        <rect rx="10" ry="10" stroke-width="4" stroke-dasharray="10, 10"
+              fill="none" stroke="#954a00"/>
     </svg>
     <!-- Content Canvas -->
     <div class="flex-1 flex flex-col" style="margin-top: 3rem">
@@ -164,11 +217,14 @@
                     </p>
                 </div>
                 <!-- CTA Actions -->
-                <form  action="#" enctype="multipart/form-data">
-                    <input onchange="pdf_preview(this.files[0])" style="display: none" type="file" id="file" name="file">
+                <form action="#" enctype="multipart/form-data">
+                    <input onchange="pdf_preview(this.files[0])"
+                           style="display: none" type="file" id="file"
+                           name="file">
                 </form>
                 <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-                    <a onclick="$('#file').click()" href="#" class="group px-8 py-4 bg-primary text-on-primary rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
+                    <a onclick="$('#file').click()" href="#"
+                       class="group px-8 py-4 bg-primary text-on-primary rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
                         <span class="material-symbols-outlined group-hover:rotate-90 transition-transform">add</span>
                         Importer un document
                     </a>
@@ -197,83 +253,123 @@
     </div>
 </main>
 
-<main id="preview" class="kb-hidden flex h-screen overflow-hidden">
-    <section style="padding: 2rem 2rem 0 2rem; position: relative" class="w-3/5 bg-slate-900 flex flex-col relative overflow-hidden">
+<main style="height: calc(100vh - 4rem);" id="preview"
+      class="kb-hidden flex h-screen overflow-hidden">
+    <section style="padding: 2rem 2rem 0 2rem; position: relative"
+             class="w-3/5 bg-slate-900 flex flex-col relative overflow-hidden">
 
         <div class="w-full h-full loader flex flex items-center justify-center">
-            <img width="30" src="{{ url_for('static', filename='images/loader-multi.gif') }}" alt="loader gif">
+            <img width="30"
+                 src="{{ url_for('static', filename='images/loader-multi.gif') }}"
+                 alt="loader gif">
         </div>
         <div id="upload-progress-bar"></div>
+        <div class="scanline z-20 left-0"></div>
         <div id="pdf-canvas" style="max-height: 100%; max-width:100%">
         </div>
     </section>
-    <aside class="w-2/5 bg-white flex flex-col border-l border-slate-100 shadow-inner overflow-y-auto">
-        <div id="election-name">
-            <div class="h-8 w-40 skeleton rounded-lg opacity-20"></div>
+    <aside class="w-2/5 bg-white flex flex-col border-l border-slate-100 shadow-inner overflow-y-auto overflow-x-hidden">
+
+        <!-- Header -->
+        <div class="p-8 border-b border-slate-50 bg-slate-50/30">
+            <h2 class="text-slate-900 font-extrabold text-2xl tracking-tighter mb-2">
+                Ingestion De Données
+            </h2>
+            <p class="text-slate-500 text-sm">Traitement automatisé des
+                archives électorales</p>
         </div>
 
-        <div class="flex-1">
-            <div class="border-b border-slate-50 group kb-hidden">
-                <button class="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition-colors">
-                    <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary">
-                            <span class="material-symbols-outlined"
-                                  data-weight="fill">ballot</span>
-                        </div>
-                        <div class="text-left">
-                            <h3 class="font-bold text-slate-800">Scrutin &amp;
-                                Candidats</h3>
-                            <p class="text-xs text-slate-400">3 candidats
-                                identifiés</p>
-                        </div>
-                    </div>
-                    <span class="material-symbols-outlined text-slate-400 group-hover:rotate-180 transition-transform">expand_more</span>
-                </button>
-                <div class="px-6 pb-8 grid grid-cols-2 gap-4">
-                    <!-- Candidate 1 -->
-                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                        <div class="flex items-center gap-3 mb-3">
-                            <img alt="Alassane"
-                                 class="w-8 h-8 rounded-full object-cover"
-                                 data-alt="Close-up portrait of an African man with grey hair in professional lighting"
-                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYffbIknJ1VY4sCouI5ZbzUGfQAViBaqnSNhKSy-svbEQzoTe9ItfYhlRAa0O4fQplcjXzjNp6KIMGvgXVjmvQevYXYAprKFIZYzauxe_e7M4KKMBOkBlJrD6GeD_8tlV6xlN2MNnn8-oWfWSFmjwY5PYv6SwM5qVmdwEZxkJSd1QpN-dCNYZ8dtvUsiptDkg3VE7Jo5bStsE0lcLHXVAE9uHcAffqYelfqdTwO3OhMy3ikxVv5OUOYbGpfxL1CUixu26f_UMX5y5m"/>
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase">
-                                    Candidat A</p>
-                                <p class="text-xs font-bold text-slate-800">A.
-                                    Ouattara</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-[10px] px-2 py-0.5 bg-secondary/10 text-secondary rounded-full font-bold">Match 100%</span>
-                            <span class="text-xs font-bold text-slate-600">RHDP</span>
-                        </div>
-                    </div>
-                    <!-- Candidate 2 -->
-                    <div class="p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                        <div class="flex items-center gap-3 mb-3">
-                            <img alt="Bedie"
-                                 class="w-8 h-8 rounded-full object-cover"
-                                 data-alt="Portrait of an older distinguished African man with glasses in soft studio light"
-                                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEnQDLT-3iG7CYWZAzpPSlFrPDU0O1UYRzqQW4KFSgb3ZLyFzYAxjhzn47t1Zg9lI_KDIHkZlirhkP29835wdu2vdSPgK94a9kKrK9455cd-lZEhaTOBDCgg2o3gBhdMRZlBYHzYUCN7m7hv8ZCjSGw8IlhI_FkicyH5pPfyaXy2QxJWZs8CEksEVYka8R1iRCW5qlCd8AqV6VOgLsPHqNFFW4xqc5iv-Wc3AGKppep3P1FSZ_lKuhycRB5kJ_fymqqS6WrKmrU5QG"/>
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase">
-                                    Candidat B</p>
-                                <p class="text-xs font-bold text-slate-800">H.
-                                    K. Bédié</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-[10px] px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold">Match 85%</span>
-                            <span class="text-xs font-bold text-slate-600">PDCI</span>
-                        </div>
-                    </div>
+        <!-- Steps -->
+        <div class="flex-1 p-8 space-y-12">
+            <div id="step-fingerprint" class="relative flex gap-6">
+                <div id="fingerprint-stepper" class="stepper-line"></div>
+                <div id="fingerprint-dot"
+                     class="relative z-10 w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <span id="fingerprint-icon"
+                          class="material-symbols-outlined text-xl">fingerprint</span>
+                </div>
+                <div class="flex-1 pt-1">
+                    <h3 id="fingerprint-title"
+                        class="font-bold text-slate-400 mb-2">Identification du
+                        Scrutin</h3>
+                    <div id="fingerprint-found"
+                         class="flex gap-2 flex-wrap"></div>
                 </div>
             </div>
 
-            <div class="border-b border-slate-50 group">
-                <div class="h-15 w-40 skeleton rounded-lg opacity-20"></div>
+            <!-- Step 2 : Table -->
+            <div id="step-table" class="relative flex gap-6">
+                <div id="table-stepper" class="stepper-line"></div>
+                <div id="table-dot"
+                     class="relative z-10 w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <span id="table-icon"
+                          class="material-symbols-outlined text-xl">table</span>
+                </div>
+                <div class="flex-1 pt-1">
+                    <h3 id="table-title" class="font-bold text-slate-400 mb-2">
+                        Détection du Tableau</h3>
+                    <div id="table-info"></div>
+                </div>
             </div>
+
+            <!-- Step 3 : Group -->
+            <div id="step-group" class="relative flex gap-6">
+                <div id="group-stepper" class="stepper-line"></div>
+                <div id="group-dot"
+                     class="relative z-10 w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <span id="group-icon"
+                          class="material-symbols-outlined text-xl">group</span>
+                </div>
+                <div class="flex-1 pt-1">
+                    <h3 id="group-title" class="font-bold text-slate-400 mb-2">
+                        Extraction des Candidats</h3>
+                    <div id="group-list" class="space-y-1"></div>
+                </div>
+            </div>
+
+            <!-- Step 4 : Place -->
+            <div id="step-place" class="relative flex gap-6">
+                <div id="place-stepper" class="stepper-line"></div>
+                <div id="place-dot"
+                     class="relative z-10 w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <span id="place-icon"
+                          class="material-symbols-outlined text-xl">map</span>
+                </div>
+                <div class="flex-1 pt-1">
+                    <h3 id="place-title" class="font-bold text-slate-400 mb-2">
+                        Extraction des Localités</h3>
+                    <div id="place-list" class="grid grid-cols-1 gap-1"></div>
+                </div>
+            </div>
+
+            <!-- Step 5 : Database -->
+            <div id="step-database" class="relative flex gap-6">
+                <div id="database-stepper" class="stepper-line"></div>
+                <div id="database-dot"
+                     class="relative z-10 w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <span id="database-icon"
+                          class="material-symbols-outlined text-xl">database</span>
+                </div>
+                <div class="flex-1 pt-1">
+                    <h3 id="database-title"
+                        class="font-bold text-slate-400 mb-2">Insertion
+                        Massive</h3>
+                    <div id="database-info"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Terminal -->
+        <div class="bg-slate-900 text-white sticky bottom-0 z-100" style="padding: 10px; z-index: 100">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-2 bg-white/10 rounded-lg">
+                    <span class="material-symbols-outlined text-white text-sm">terminal</span>
+                </div>
+                <span class="text-[10px] font-bold tracking-widest uppercase text-slate-400">Extracteur</span>
+            </div>
+            <div id="engine-logs"
+                 class="space-y-1 font-mono text-[10px] text-slate-500 max-h-[80px] overflow-y-auto"></div>
         </div>
 
     </aside>
@@ -285,11 +381,29 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
 <script src="{{ url_for('static', filename='js/pdfReader.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stream-archive.js') }}"></script>
 
 <script>
 
+    $("#confirm").click(()=>{
+        fetch(
+            config_app.api_base+"/election/"+get_new_election_id()+"/confirm",
+        ).then((response)=>response.json()).then(data=>{
+            console.log(data);
+            if (data.ok) location.href = "/Administration/Archives";
+        })
+    });
+
     socket.on("election_processing", (data)=>{
-        console.log(data);
+        process_state(data);
+        if (data.database.state === "done"){
+            $(".scanline").hide();
+            $("#confirm").prop("disabled", false)
+        }
+    })
+
+    socket.on("election_processing-stream", (data)=>{
+        console.log("stream",data);
     })
 
     const PDFReader = PDFViewer(
@@ -301,7 +415,7 @@
 
     function get_new_election_id(){
         const params = new URLSearchParams(window.location.search);
-        return params.get("new") || null
+        return params.get("new") || null;
     }
 
     async function getFileHash(file) {
@@ -332,29 +446,30 @@
             xhr.onreadystatechange = () => {
                 if (xhr.readyState === XMLHttpRequest.DONE) {
                     if (xhr.status === 200) {
+                        $('upload-progress-bar').hide()
+                        const res = JSON.parse(xhr.responseText);
                         const params = new URLSearchParams(window.location.search);
-                        params.set('new', JSON.parse(xhr.responseText).election_id);
+                        params.set('new', res.election_id);
 
                         history.replaceState(null, "", "?" + params.toString());
-                        console.log("Upload réussi :", JSON.parse(xhr.responseText));
+                        console.log("Upload réussi :", res);
+                        socket.emit("election-processing-watcher", res.election_id)
+
 
                     } else {
                         console.error("Erreur d'upload");
-
                     }
                 }
             };
 
             xhr.open('POST', window.config_app.api_base+"/election/new/archive-form-file" , true);
 
-            const token = localStorage.getItem('a_token');
+            const token = localStorage.getItem('access_token');
 
             xhr.setRequestHeader('X-CSRF-TOKEN', getCookie('csrf_access_token'))
             if (token) {
                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
             }
-
             xhr.send(formData);
 
         })
@@ -384,6 +499,16 @@
                 })
                 .then(d=>{
                     PDFReader.load(d.url);
+                    $("#filename").text(d.filename);
+                    console.log(d);
+                    if (d.state){
+                        process_state(d.state);
+                        if (d.state.database.state === "done"){
+                            $(".scanline").hide();
+                            $("#confirm").prop("disabled", false)
+                        }
+                    }
+
                 })
             return;
         }
@@ -413,6 +538,7 @@
                     return resp.json();
                 })
                 .then(d=>{
+                    _lastState = {};
                     const url = new URL(window.location);
                     // Supprime tous les paramètres
                     url.search = "";
@@ -464,6 +590,12 @@
     })
 
 </script>
+{% endblock %}
+
+{% block socket_connected %}
+if (get_new_election_id()){
+socket.emit("election-processing-watcher", get_new_election_id())
+}
 {% endblock %}
 
 

@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% from "macros.html" import logo %}
 {% from "macros_admin.html" import nav %}
+{% from "macros_admin.html" import autoDisconnect %}
 
 {% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
 
 
 {% block title %}Loading...{% endblock %}
 {% block content %}
+{{ autoDisconnect() }}
+
 <style>
     .material-symbols-outlined {
         font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;

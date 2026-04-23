@@ -5,7 +5,7 @@ import re
 import traceback
 import uuid
 from functools import partial
-from typing import Dict
+from typing import Dict, Any
 
 import pdfplumber
 from PIL import Image
@@ -213,7 +213,41 @@ class Worker:
         if not election:
             print(election, "election pas trouver")
             return []
+        _redis_key = "process-" + str(election_id)
 
+        process_working_actual: Dict[str, Any] = {
+            "fingerprint": {
+                "state": "not-started",
+                "raw_name": None,
+                "name": None,
+                "type": None
+            },
+            "table":{
+                "state": "not-started",
+                "header_rows_count": None,
+                "columns_found": None,
+            },
+            "group":{
+                "state": "not-started",
+                "list": []
+            },
+            "place": {
+                "state": "not-started",
+                "list": []
+            },
+            "database": {
+                "state": "not-started",
+            }
+        }
+
+        async def save_state():  # process_working_actual
+            await self.election_service.set_archive_process_working(process_working_actual, election_id)
+            await self.socket.emit(
+                "election_processing",
+                process_working_actual,
+                room=f"processing-{election_id}"
+            )
+        await save_state()
 
         print("going to work for election:", election)
         table_settings = {
@@ -275,8 +309,15 @@ class Worker:
                 str(election_id), file, "crops/locality/" + uuid.uuid4().hex + ".png",
                 content_type="image/png", public=True, retrieve_url=True
             )
-
             extracted_locality.append(l)
+            process_working_actual["place"]["list"][-1] = (
+                {
+                    "state": "done",
+                    "name": l["value"],
+                    "region": l["stage"].get("region")
+                }
+            )
+            await save_state()
 
 
         async  def _insert_cand_img(_page, _cand):
@@ -298,7 +339,17 @@ class Worker:
             )
 
 
+        # await self.socket.emit(
+        #     "election_processing-stream",
+        #     "[Process] Lecture du PDF",
+        #     room=f"processing-{election_id}"
+        # )
         async with doc.get() as filename:
+            # await self.socket.emit(
+            #     "election_processing-stream",
+            #     "[OK] Lecture du PDF",
+            #     room=f"processing-{election_id}"
+            # )
 
             page1         = None
             columns_meta  = None
@@ -323,10 +374,19 @@ class Worker:
 
             page_index         = -1
 
-
-
+            # await self.socket.emit(
+            #     "election_processing-stream",
+            #     "[Process] Parcourt des pages",
+            #     room=f"processing-{election_id}"
+            # )
             async for page in _async_read_pdf(filename):
                 page_index  += 1
+
+                # await self.socket.emit(
+                #     "election_processing-stream",
+                #     f"[Process] Page {page_index+1}",
+                #     room=f"processing-{election_id}"
+                # )
                 table_index  = 0
                 # if page_index == 3:
                 #     print("\n\n\n\n\n\n", len(page.rects))
@@ -336,20 +396,24 @@ class Worker:
 
                 # ── Extraire le nom de l'élection depuis la première page ──
                 if page1 is None:
+                    process_working_actual["fingerprint"]["state"] = "pending"
+                    await save_state()
+
                     page1 = page
                     name  = await asyncio.to_thread(
                         extract_election_name_from_pdf_page_1, page1
                     )
                     if name is not None:
-                        await self.socket.emit(
-                            "election_processing",
-                            {"election_name": name},
-                            room=room
-                        )
+                        process_working_actual["fingerprint"]["election_raw"] = name
+                        await save_state()  # process_working_actual
+
 
                 # ── Identifier les colonnes (une seule fois, sur la première
                 #    page qui contient le bon tableau) ──
                 if columns_meta is None:
+                    process_working_actual["table"][
+                        "state"] = "pending"
+                    await save_state()
                     async for table_rows_data in _loop(
                         page.extract_tables, table_settings=table_settings
                     ):
@@ -362,6 +426,37 @@ class Worker:
                         column_cache.add(key)
                         columns_meta = await self._get_columns_from_archive(column, name)
                         if columns_meta is not None:
+                            election.set(
+                                type_=columns_meta.get("election_type"),
+                                name=name
+                            )
+
+                            process_working_actual["fingerprint"][
+                                "state"] = "done"
+                            process_working_actual["table"][
+                                "state"] = "done"
+                            process_working_actual["fingerprint"].update(
+                                {
+                                    "name": election.name,
+                                    "type": election.type
+                                }
+                            )
+
+                            if columns_meta["candidate_results_format"] == "column":
+                                process_working_actual["group"]["list"] = [
+                                    {"name": c["candidate_name"], "party_ticker": c["party_ticker"]}
+                                    for c in columns_meta["candidate_results"]
+                                ]
+                                process_working_actual["group"]["state"] = "done"
+                            else:
+                                process_working_actual["group"][
+                                    "state"] = "pending"
+                            process_working_actual["table"]["header_rows_count"] = index_row
+                            process_working_actual["table"]["columns_found"] = {
+                                "idx": columns_meta["idx"],
+                                "column": column
+                            }
+                            await save_state()  # process_working_actual
                             break
                         table_index += 1
                     if columns_meta is None:
@@ -383,6 +478,8 @@ class Worker:
                 locality_cell_idx = _first_idx(locality_idx)
 
                 _current_table_index = 0
+                process_working_actual["place"]["state"] = "pending"
+                await save_state()
                 async for table in _loop(page.find_tables, table_settings=table_settings):
                     if _current_table_index < table_index:
                         print("il s'agit ne sagit pas du table")
@@ -518,6 +615,7 @@ class Worker:
                                     )
                                 )
                                 await _insert_locality_img(last_locality)
+
 
                             last_locality = {
                                 "value": None,
@@ -656,6 +754,15 @@ class Worker:
                                 # Cas 2 : fill forward
                                 last_locality["value"] = locality_raw
                                 last_locality["stage"]["region"] = last_region
+
+                                process_working_actual["place"]["list"].append(
+                                    {
+                                        "state": "pending",
+                                        "name": last_locality["value"],
+                                        "region": last_locality["stage"].get("region")
+                                    }
+                                )
+                                await save_state()
                             elif locality_raw != last_locality["value"]:
                                 is_fake_locality = False
                                 if not locality_sep_crossed and not region_sep_crossed:
@@ -698,6 +805,14 @@ class Worker:
                                         "pil_img": [],
                                         "crop_url": None
                                     }
+                                    process_working_actual["place"]["list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
                                 else:
                                     last_locality["value"] += " " + locality_raw
                             # Cas 4 (locality_raw == last_locality["value"]) :
@@ -759,6 +874,14 @@ class Worker:
                                         row_content, status_idx
                                     )
                                 )
+
+                            process_working_actual["group"]["list"].append(
+                                {
+                                    "name": cand.get("full_name"),
+                                    "party": cand.get("party_ticker"),
+                                }
+                            )
+                            await save_state()
                         else:
                             # Plusieurs candidats par ligne (format colonne)
                             for c in candidate_results_idx:
@@ -898,6 +1021,16 @@ class Worker:
                                     last_locality["value"] = locality_raw
                                     last_locality["stage"][
                                         "region"] = last_region
+
+                                    process_working_actual["place"][
+                                        "list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
                                 elif locality_raw != last_locality["value"]:
                                     # Cas 3 : vraie nouvelle localité
                                     print("on ferme la locality:",
@@ -925,6 +1058,15 @@ class Worker:
                                         "pil_img": [],
                                         "crop_url": None
                                     }
+                                    process_working_actual["place"][
+                                        "list"].append(
+                                        {
+                                            "state": "pending",
+                                            "name": last_locality["value"],
+                                            "region": last_locality["stage"].get("region")
+                                        }
+                                    )
+                                    await save_state()
 
                             for k, i in idxs.items():
                                 if k in ("region", "locality"):
@@ -1003,6 +1145,14 @@ class Worker:
                                 print("\t\tajout du candidat:", str(cand)[:30])
                                 last_locality["candidates"].append(cand)
 
+                                process_working_actual["group"]["list"].append(
+                                    {
+                                        "name": cand.get("full_name"),
+                                        "party": cand.get("party_ticker"),
+                                    }
+                                )
+                                await save_state()
+
                             else:
                                 # Plusieurs candidats par ligne (format colonne)
                                 for c in candidate_results_idx:
@@ -1040,6 +1190,11 @@ class Worker:
                     )
 
                     # Un seul tableau pertinent par page
+                    # await self.socket.emit(
+                    #     "election_processing-stream",
+                    #     f"[OK] Page {page_index + 1}",
+                    #     room=f"processing-{election_id}"
+                    # )
                     break
 
             # ── Fin du document : fermer la dernière localité en cours ──
@@ -1060,29 +1215,32 @@ class Worker:
 
             # ── Émettre une erreur si les colonnes n'ont pas été identifiées ──
             if columns_meta is None:
-                await self.socket.emit(
-                    "election_processing",
-                    {
-                        "error": (
-                            "Le parsing du document a échoué "
-                            "a l'etape identification des colonnes"
-                        ),
-                    },
-                    room=room
-                )
+                process_working_actual["table"]["state"] = "error"
+                await save_state()
+
             else:
                 # Traitement final des localités extraites
-                with open("tmp.json", "w", encoding="utf-8") as f:
-                    f.write(json.dumps(extracted_locality))
+                process_working_actual["group"]["state"] = "done"
+                process_working_actual["place"]["state"] = "done"
 
-                election.set(type_=columns_meta.get("election_type"), name=name)
-                await election.update()
-                await self.election_service.storage.set_public(
-                    str(election_id), "crops"
-                )
-                await self.election_service.add_extracted_archive_data(
-                    extracted_locality, election
-                )
+                process_working_actual["database"]["state"] = "pending"
+                await save_state()
+                try:
+                    with open("tmp.json", "w", encoding="utf-8") as f:
+                        f.write(json.dumps(extracted_locality))
+
+                    election.set(type_=columns_meta.get("election_type"), name=name)
+                    await election.update()
+                    await self.election_service.storage.set_public(
+                        str(election_id), "crops"
+                    )
+                    await self.election_service.add_extracted_archive_data(
+                        extracted_locality, election
+                    )
+                    process_working_actual["database"]["state"] = "done"
+                except:
+                    process_working_actual["database"]["state"] = "error"
+                await save_state()
 
         return extracted_locality
 
@@ -1139,10 +1297,17 @@ class Worker:
 
         await self.mr.publish(room, {"question_id": question_id})
 
-        async def _callback(resp, message_accumulator):
+        async def _callback(resp, message_accumulator, total_prompt_tokens, total_completion_tokens):
             answer_meta = {
                 "messages": [m.to_dict() for m in message_accumulator],
-                "meta": None
+                "meta":{
+                    "provider": resp.get("provider"),
+                    "model": resp.get("model"),
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                    "latency_ms": resp.get("latency_ms"),
+                }
+
             }
             answer = None
             status = ("DONE" if resp["success"] else "FAIL")\

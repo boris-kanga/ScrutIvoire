@@ -37,7 +37,7 @@ class Election:
             part = re.split(r"l?'?\b[eé]lection", self.name, flags=re.I)[0].strip()
             year = re.search(r"\d{4}", self.name)
             if year:
-                self.name = part + " " + year.group()
+                self.name = (part + " " + year.group()).strip()
 
     def to_dict(self) -> dict:
         d = {

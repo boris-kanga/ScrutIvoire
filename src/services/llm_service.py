@@ -88,13 +88,13 @@ class LLMService:
             if needs_limit and "limit" not in query.lower():
                 query += " LIMIT 100"
             try:
-                res = await self.llm_db.run_query(args.get("query"))
-                return {"ok": True, "result": res}
+                res = await self.llm_db.run_query(query)
+                return {"ok": True, "result": res, "query": args.get("query")}
             except Exception as e:
                 print("\tLa requete a echoue:", e)
                 return {
                     "ok": False, "error": str(e),
-                    "query": query
+                    "query": args.get("query")
                 }
 
         if func_name == "get_table_evidence":
@@ -212,6 +212,7 @@ class LLMService:
             )[0].content
             has_sql_injected = True
 
+        total_prompt_tokens, total_completion_tokens = 0, 0
         result = await self.llm_repo.router.run(
             task_type="chat",
             messages=base + message_accumulator,
@@ -220,10 +221,19 @@ class LLMService:
             tool_choice="auto",
             response_format="json"
         )
+        if result["success"]:
+            total_prompt_tokens += result["prompt_tokens"]
+            total_completion_tokens += result["completion_tokens"]
+
         print("\n\n")
         print(result)
         if callback is not None:
-            await callback(result, message_accumulator)
+            await callback(
+                    result,
+                    message_accumulator,
+                    total_prompt_tokens=total_prompt_tokens,
+                    total_completion_tokens=total_completion_tokens
+                )
 
         successive_error = 0
         last_sql = None
@@ -257,7 +267,12 @@ class LLMService:
                 if tc["name"] == "execute_sql_query":
                     if (tc["name"], tc["arguments"]) == last_sql:
                         if callback is not None:
-                            await callback(error_msg, message_accumulator)
+                            await callback(
+                                error_msg,
+                                message_accumulator,
+                                total_prompt_tokens=total_prompt_tokens,
+                                total_completion_tokens=total_completion_tokens
+                            )
                         return error_msg["result"]
                     last_sql = (tc["name"], tc["arguments"])
                 # call tools
@@ -299,14 +314,24 @@ class LLMService:
 
                         if successive_error > self.max_successive_error:
                             if callback is not None:
-                                await callback(error_msg, message_accumulator)
+                                await callback(
+                                    error_msg,
+                                    message_accumulator,
+                                    total_prompt_tokens=total_prompt_tokens,
+                                    total_completion_tokens=total_completion_tokens
+                                )
                             return error_msg["result"]
 
                     if not output.get("result"):
                         consecutive_empty_sql_res += 1
                         if consecutive_empty_sql_res > self.consecutive_empty_sql_res_th:
                             if callback is not None:
-                                await callback(error_msg, message_accumulator)
+                                await callback(
+                                    error_msg,
+                                    message_accumulator,
+                                    total_prompt_tokens=total_prompt_tokens,
+                                    total_completion_tokens=total_completion_tokens
+                                )
                             return error_msg["result"]
 
                 tool_results.append((tc["id"], tc["name"], tc["arguments"], output))
@@ -325,7 +350,7 @@ class LLMService:
             for tid, tname, _, output in tool_results:
                 message_accumulator.append(LLMMessage(
                     role="tool",
-                    content=str(output),
+                    content=json.dumps(output, default=str),
                     tool_call_id=tid,  # lie le résultat à l'appel
                 ))
 
@@ -340,7 +365,12 @@ class LLMService:
                     "tool_calls": []
                 }
                 if callback is not None:
-                    await callback(result, message_accumulator)
+                    await callback(
+                        result,
+                        message_accumulator,
+                        total_prompt_tokens=total_prompt_tokens,
+                        total_completion_tokens=total_completion_tokens
+                    )
                 return result["result"]
 
             result = await self.llm_repo.router.run(
@@ -351,10 +381,19 @@ class LLMService:
                 tool_choice="auto",
                 response_format="json"
             )
+            if result["success"]:
+                total_prompt_tokens += result["prompt_tokens"]
+                total_completion_tokens += result["completion_tokens"]
+
             print("\n\n")
             print(result)
             if callback is not None:
-                await callback(result, message_accumulator)
+                await callback(
+                    result,
+                    message_accumulator,
+                    total_prompt_tokens=total_prompt_tokens,
+                    total_completion_tokens=total_completion_tokens
+                )
 
         source = await self.compile_source(
             source_context["circ_ids"],

@@ -39,10 +39,10 @@
               data-icon="group">group</span>
                 Users
             </a>
-            <a class="{% if menu=='audit' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
-               href="#">
+            <a class="{% if menu=='monitoring' %}{{ class_active}}{% else %}{{ class_inactive }}{% endif %}"
+               href="{{ url_for('admin.monitoring') }}">
                 <span class="material-symbols-outlined" data-icon="security">security</span>
-                Audit Logs
+                Monitoring
             </a>
         </nav>
         <div class="mt-auto pt-6 lg:px-4 flex items-center gap-4">
@@ -59,6 +59,56 @@
 {% endmacro %}
 
 
-{% macro pdfReader() %}
+{% macro autoDisconnect() %}
+
+<script>
+    (function() {
+        // --- 1. LOGIQUE DE DÉCONNEXION UNIQUE ---
+        const handleLogout = () => {
+            console.warn("Session expirée (401). Redirection vers la page de connexion...");
+
+            // Éviter une boucle de redirection si on est déjà sur la page de login
+            if (window.location.pathname === '/Administration/Connexion') return;
+
+            localStorage.removeItem('access_token');
+            // Optionnel : Effacer d'autres données sensibles ou l'état global (Redux/Zustand)
+            window.location.href = '/Administration/Connexion';
+        };
+
+        // --- 2. INTERCEPTIONS FETCH ---
+        if (window.fetch) {
+            const originalFetch = window.fetch;
+            window.fetch = async (...args) => {
+                const response = await originalFetch(...args);
+                if (response.status === 401) {
+                    handleLogout();
+                }
+                return response;
+            };
+        }
+
+        // --- 3. INTERCEPTIONS XMLHTTPREQUEST (XHR) ---
+        const originalOpen = XMLHttpRequest.prototype.open;
+        const originalSend = XMLHttpRequest.prototype.send;
+
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this._url = url; // Stockage de l'URL pour debug si besoin
+            return originalOpen.apply(this, arguments);
+        };
+
+        XMLHttpRequest.prototype.send = function() {
+            this.addEventListener('load', function() {
+                if (this.status === 401) {
+                    handleLogout();
+                }
+            });
+            return originalSend.apply(this, arguments);
+        };
+
+        console.log("Système d'interception réseau 401 activé.");
+    })();
+
+
+</script>
 
 {% endmacro %}

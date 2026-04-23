@@ -40,6 +40,15 @@ class ElectionService:
             repo.db
         )
 
+    async def set_archive_process_working(self, actual, election_id, room=None):
+        await self.rd.set("process-" + str(election_id), actual)
+
+    async def delete_archive_process_working(self, election_id):
+        await self.rd.delete("process-" + str(election_id))
+
+    async def get_archive_process_state(self, election_id):
+        return await self.rd.get("process-" + str(election_id))
+
     async def get_all(self):
         els = await self.repo.get_all_elections()
         stats = await self.repo.get_stat(
@@ -302,6 +311,7 @@ class ElectionService:
     async def delete_archive(self, election_id):
         await self.repo.delete_election(election_id)
         await self.storage.delete_bucket(str(election_id))
+        await self.delete_archive_process_working(election_id)
 
     async def start_archiving_process(
             self,
