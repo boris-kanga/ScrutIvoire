@@ -262,6 +262,7 @@ class Worker:
                 for p in pdf.pages:
                     yield p
 
+
         async def _async_read_pdf(_filename):
             _iter = _sync_read(_filename)
             while True:
@@ -273,6 +274,7 @@ class Worker:
                 except StopIteration:
                     break
 
+
         async def _loop(fn, *args, **kw):
             def _inner():
                 for item in fn(*args, **kw):
@@ -283,6 +285,7 @@ class Worker:
                     yield await asyncio.to_thread(next, _iter)
                 except StopIteration:
                     break
+
 
         async def extract_region_locality_by_prevent_rotation(_row, _idx, _page):
             return_value = ""
@@ -328,7 +331,6 @@ class Worker:
                     _page,
                     bbox_json,
                     k
-
                 )
             ]
             file = self.vertical_merge_pil_image(pil_img)
@@ -337,7 +339,6 @@ class Worker:
                 str(election_id), file, "crops/candidate/" + uuid.uuid4().hex + ".png",
                 content_type="image/png", public=True, retrieve_url=True
             )
-
 
         # await self.socket.emit(
         #     "election_processing-stream",
@@ -1239,9 +1240,13 @@ class Worker:
                     )
                     process_working_actual["database"]["state"] = "done"
                 except:
+                    traceback.print_exc()
                     process_working_actual["database"]["state"] = "error"
                 await save_state()
 
+        await self.election_service.rd.delete(
+            f"election:{election_id}:process_id"
+        )
         return extracted_locality
 
     async def archive_processing(self):
@@ -1257,11 +1262,16 @@ class Worker:
                     self._processing_archive_task(room, election_id)
                 )
             _id = uuid.uuid4()
+            await asyncio.sleep(0)
+
+            await self.election_service.rd.set(
+                f"election:{election_id}:process_id",
+                str(_id)
+            )
             self._tasks[str(_id)] = task
             print("la tache est tague avec id=", _id)
 
             task.add_done_callback(partial(self.task_callback, _id=_id))
-            await asyncio.sleep(0)
 
     def task_callback(self, task, _id):
         try:
@@ -1271,7 +1281,6 @@ class Worker:
             traceback.print_exc()
         finally:
             self._tasks.pop(str(_id), None)
-
 
     async def _chat_process(self, election_id, question, room):
 
@@ -1364,9 +1373,34 @@ class Worker:
             task.add_done_callback(partial(self.task_callback, _id=_id))
             await asyncio.sleep(0)
 
+    async def _verify_file_integrity(self):
+        while True:
+            elections = await self.election_service.get_all()
+            for el in elections:
+                await self.election_service.verify_report_integrity(
+                    el["id"]
+                )
+            await asyncio.sleep(60 * 60)
+
+    async def _cancel_election_process(self):
+        async for message in self.mr.subscribe(
+            MessageBrokerChannel.CANCEL_ELECTION_PROCESS
+        ):
+            print("on vient de recevoir un message")
+            data = message["data"]
+            election_id = data["election_id"]
+            process_id = await self.election_service.rd.get(
+                f"election:{election_id}:process_id"
+            )
+            if process_id in self._tasks:
+                self._tasks.pop(process_id).cancel()
+
     async def run(self):
         print("Start process")
         await asyncio.gather(
             self.archive_processing(),
-            self.chat()
+            self.chat(),
+            self._verify_file_integrity(),
+
+            self._cancel_election_process()
         )

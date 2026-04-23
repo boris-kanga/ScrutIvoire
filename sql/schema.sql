@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS source_documents (
 CREATE TABLE IF NOT EXISTS regions (
     id SERIAL PRIMARY KEY,
     election_id UUID NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
-    original_raw_name VARCHAR(100) UNIQUE
+    original_raw_name VARCHAR(100)
 );
 
 

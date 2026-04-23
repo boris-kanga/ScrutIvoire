@@ -23,6 +23,8 @@ view = Blueprint('election', __name__, url_prefix="/election")
 @view.get('/current')
 @db_depends
 async def current(storage: FileStorageProtocol, db: PgDB, rd: RedisDB):
+    verify_jwt_in_request()
+
     repo = ElectionRepo(db)
     service = ElectionService(repo, rd, storage)
     res = await service.get_current_election()
@@ -66,9 +68,35 @@ async def archive_from_file(storage: FileStorageProtocol, db: PgDB, rd: RedisDB)
     return jsonify({"ok": True, "election_id": election.id})
 
 
+@view.get("/<election_id>/integrity-status")
+@db_depends
+async def get_report_integrity(storage: FileStorageProtocol, db: PgDB, rd: RedisDB, election_id):
+    verify_jwt_in_request()
+    repo = ElectionRepo(db)
+    service = ElectionService(repo, rd, storage)
+    return jsonify({
+        "ok": True,
+        "data": await service.get_integrity_status(election_id)
+    })
+
+
+@view.get("/<election_id>/check-integrity-status")
+@db_depends
+async def check_report_integrity(storage: FileStorageProtocol, db: PgDB, rd: RedisDB, election_id):
+    verify_jwt_in_request()
+
+    repo = ElectionRepo(db)
+    service = ElectionService(repo, rd, storage)
+    return jsonify({
+        "ok": True,
+        "data": await service.verify_report_integrity(election_id)
+    })
+
 @view.get("/<election_id>/draft/report-file")
 @db_depends
 async def get_report_file_url(storage: FileStorageProtocol, db: PgDB, rd: RedisDB, election_id):
+    verify_jwt_in_request()
+
     repo = ElectionRepo(db)
     service = ElectionService(repo, rd, storage)
     election = await service.get(election_id)

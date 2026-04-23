@@ -114,6 +114,46 @@
 <input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
 {{ nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="archives") }}
 
+<template id="election-card">
+    <div class="magnetic-card bg-surface-container-lowest p-6 rounded-xl transition-all duration-300 flex flex-col gap-6 group">
+        <div class="flex justify-between items-start">
+            <div>
+                <h3 class="text-xl font-black text-on-surface tracking-tight">
+                    <span class="election-card-name"></span> | <span class="election-card-type"></span> </h3>
+            </div>
+            <div class="file-certif flex items-center gap-1.5 bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-[10px] font-bold tracking-wider">
+                <span class="material-symbols-outlined text-sm"
+                      style="font-variation-settings: 'FILL' 1;">shield</span>
+
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4 py-4 border-y border-outline-variant/10">
+            <div>
+                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter mb-1">
+                    Sièges</p>
+                <p class=" election-card-seat text-lg font-black text-on-surface">
+                    </p>
+            </div>
+            <div>
+                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter mb-1">
+                    Inscrits</p>
+                <p class="election-card-voters text-lg font-black text-on-surface">
+                    7.5M</p>
+            </div>
+            <div>
+                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter mb-1">
+                    Participation</p>
+                <p class="text-lg font-black text-secondary election-card-part">
+                    47.8%</p>
+            </div>
+        </div>
+        <button role="link" class="w-full py-4 border-2 border-primary-container text-primary-container font-bold rounded-lg transition-all duration-300 hover:bg-primary-container hover:text-on-primary election-card-link">
+            <span class="material-symbols-outlined text-sm">chat_bubble</span>
+                    Interroger l'Archive
+        </button>
+    </div>
+</template>
+
 <header id="header-new"
         class="kb-hidden fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white dark:bg-slate-950/80 backdrop-blur-xl shadow-sm">
     <div class="flex items-center gap-4">
@@ -168,6 +208,11 @@
     </div>
 </header>
 
+<form action="#" enctype="multipart/form-data">
+    <input onchange="pdf_preview(this.files[0])"
+           style="display: none" type="file" id="file"
+           name="file">
+</form>
 <!-- SideNavBar -->
 <!-- Main Content Area -->
 <main style="position:relative" id="main"
@@ -216,12 +261,6 @@
                         l'intégrité de l'information.
                     </p>
                 </div>
-                <!-- CTA Actions -->
-                <form action="#" enctype="multipart/form-data">
-                    <input onchange="pdf_preview(this.files[0])"
-                           style="display: none" type="file" id="file"
-                           name="file">
-                </form>
                 <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
                     <a onclick="$('#file').click()" href="#"
                        class="group px-8 py-4 bg-primary text-on-primary rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
@@ -253,7 +292,37 @@
     </div>
 </main>
 
-<main style="height: calc(100vh - 4rem);" id="preview"
+<main id="main-data" class="kb-hidden flex-1 lg:ml-64 p-8 min-h-screen">
+        <!-- Section 1: Exploration Historique -->
+        <section class="p-16">
+            <div class="flex flex-col md:flex-row justify-between gap-6 mb-12">
+                <div class="max-w-2xl">
+                    <span class="text-primary font-bold tracking-widest text-xs uppercase mb-2 block">Portail de Transparence</span>
+                    <h1 class="text-5xl font-black text-on-surface tracking-tighter mb-4 leading-none">
+                        Exploration Historique</h1>
+                    <p class="text-on-surface-variant body-lg leading-relaxed">
+                        Parcourez les archives électorales souveraines de la
+                        République de Côte d'Ivoire. Des données certifiées
+                        pour une démocratie éclairée.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <button onclick="$('#file').click()"
+                       class="group px-4 py-4 bg-primary text-on-primary rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
+                        <span class="material-symbols-outlined group-hover:rotate-90 transition-transform">add</span>
+                        Nouveau
+                    </button>
+                </div>
+
+            </div>
+            <!-- Magnetic Tile Archive Cards Grid -->
+            <div id="card-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+
+            </div>
+        </section>
+    </main>
+
+
+<main style="height: calc(100vh - 4rem); position: relative; top: 4rem" id="preview"
       class="kb-hidden flex h-screen overflow-hidden">
     <section style="padding: 2rem 2rem 0 2rem; position: relative"
              class="w-3/5 bg-slate-900 flex flex-col relative overflow-hidden">
@@ -396,9 +465,10 @@
 
     socket.on("election_processing", (data)=>{
         process_state(data);
-        if (data.database.state === "done"){
+        if (["done", "error"].includes(data.database.state)){
             $(".scanline").hide();
-            $("#confirm").prop("disabled", false)
+            if (data.database.state === "done")
+                $("#confirm").prop("disabled", false)
         }
     })
 
@@ -485,9 +555,9 @@
 
 
     function pdf_preview(file){
-        $("#preview .loader").show()
+        $("#preview .loader").show();
         $("#admin-nav").addClass("kb-hidden")
-        $("#main, #header-nnormal").addClass("kb-hidden");
+        $("#main, #header-normal, #main-data").addClass("kb-hidden");
         $("label[for=mobile-menu-toggle]").addClass("kb-hidden");
         $("#preview").removeClass("kb-hidden");
         $("#header-new").removeClass("kb-hidden");
@@ -503,9 +573,10 @@
                     console.log(d);
                     if (d.state){
                         process_state(d.state);
-                        if (d.state.database.state === "done"){
+                        if (["done", "error"].includes(d.state.database.state)){
                             $(".scanline").hide();
-                            $("#confirm").prop("disabled", false)
+                            if (data.database.state === "done")
+                                $("#confirm").prop("disabled", false)
                         }
                     }
 
@@ -519,7 +590,11 @@
     }
     function reset_new_archive(){
         $("#admin-nav").removeClass("kb-hidden");
-        $("#main, #header-nnormal").removeClass("kb-hidden");
+        if($("#card-container magnetic-card").length){
+            $("#main-data, #header-normal").removeClass("kb-hidden");
+        }else{
+            $("#main, #header-normal").removeClass("kb-hidden");
+        }
         $("label[for=mobile-menu-toggle]").removeClass("kb-hidden");
 
         $("#header-new").addClass("kb-hidden");
@@ -583,12 +658,114 @@
 
 
 
+
+
+</script>
+
+
+<script>
+    function formatRelativeTime(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now - date) / 1000);
+
+      // Définition des paliers (en secondes)
+      const units = [
+        { unit: 'year',   seconds: 31536000 },
+        { unit: 'month',  seconds: 2592000 },
+        { unit: 'day',    seconds: 86400 },
+        { unit: 'hour',   seconds: 3600 },
+        { unit: 'minute', seconds: 60 },
+        { unit: 'second', seconds: 1 }
+      ];
+
+      for (const { unit, seconds } of units) {
+        if (diffInSeconds >= seconds || unit === 'second') {
+          const count = Math.floor(diffInSeconds / seconds);
+
+          // Utilisation de l'API native Intl
+          const formatter = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' });
+          return formatter.format(-count, unit);
+        }
+      }
+    }
+
+</script>
+
+<script>
+    const formatCompact = (number) => {
+      return new Intl.NumberFormat('fr-FR', {
+        notation: "compact",
+        compactDisplay: "short"
+      }).format(number);
+    };
+
     $(document).ready(()=>{
         if (get_new_election_id()){
             pdf_preview(get_new_election_id());
         }
-    })
+        fetch(config_app.api_base + "/stat").then((response)=>{
+            return response.json()
+        }).then((data)=>{
+            if (data.elections.length == 0) return;
+            if (get_new_election_id()){
 
+            }else{
+                $("#main").addClass("kb-hidden")
+                $("#main-data").removeClass("kb-hidden");
+            }
+
+            const tmp = $("#election-card").html();
+            data.elections.forEach(
+                (el)=>{
+                    let card = $(tmp);
+                    if (el.integrity_status){
+                        // formatRelativeTime
+                        card.find(".file-certif").append(`
+                            <div>
+                                Certifiée
+                                <div style="font-size: 0.4rem;">${formatRelativeTime(el.last_integrity_check)}</div>
+                            </div>
+
+                        `)
+                    }else{
+                        card.find(".file-certif").append(`
+                            <div>
+                                Problème
+                                <div style="font-size: 0.4rem;">${formatRelativeTime(el.last_integrity_check)}</div>
+                            </div>
+                        `).css("background", "#ee555555").css("color", "red").find(".material-symbols-outlined").text("warning")
+
+                    }
+                    card.find(".election-card-type").text(
+                        (el.type || "---").toUpperCase()
+                    )
+
+                    card.find(".election-card-name").text(
+                        (el.name || "---").toUpperCase()
+                    )
+
+                    card.find(".election-card-seat").text(
+                        (el.nb_seat || 1).toString()
+                    );
+
+                    card.find(".election-card-voters").text(
+                        (formatCompact(el.voters_total) || "---").toString().toUpperCase()
+                    ).attr("title", el.voters_total);
+
+                    card.find(".election-card-part").text(
+                        100*(el.expressed_votes/(el.registered_voters_total || el.pop_size)).toFixed(2) + "%"
+                    )
+                    card.find(".election-card-link").attr("data-id", el.id);
+
+                    $("#card-container").append(card);
+                });
+        });
+    })
+    $("#card-container").on("click", "button", (e)=>{
+        let target = $(e.target);
+        location.href = "/Chat/" + target.attr("data-id");
+    })
 </script>
 {% endblock %}
 

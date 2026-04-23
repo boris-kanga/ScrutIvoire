@@ -8,6 +8,9 @@ from datetime import datetime, date
 from functools import wraps
 
 from kb_tools.tools import remove_accent_from_text, format_var_name
+import hashlib
+import aiofiles
+
 
 
 
@@ -57,6 +60,16 @@ def load_module(module, package=None):
         sys.modules.pop(name)
     del m
 
+
+async def calculer_hash(chemin_fichier, algorithme="sha256"):
+    h = hashlib.new(algorithme)
+    async with aiofiles.open(chemin_fichier, mode='rb') as f:
+        while True:
+            chunk = await f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
 
 
 __cache = {}

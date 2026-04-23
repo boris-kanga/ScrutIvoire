@@ -6,7 +6,7 @@
 {% block body_class %}bg-background font-body text-on-surface font-body antialiased{% endblock %}
 
 
-{% block title %}ScrutIvoire | Monitoring{% endblock %}
+{% block title %}Monitoring{% endblock %}
 {% block content %}
 {{ autoDisconnect() }}
 
@@ -37,42 +37,6 @@
     --sidebar: 240px;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    display: flex;
-    min-height: 100vh;
-}
-
-.main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-}
-
-/* TOPBAR */
-.topbar {
-
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0 28px;
-    height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky; top: 0; z-index: 50;
-}
-
-.topbar-left { display: flex; align-items: center; gap: 8px; }
-.breadcrumb { font-size: 12px; color: var(--muted); }
-.breadcrumb span { color: var(--text); font-weight: 500; }
-
-.topbar-right { display: flex; align-items: center; gap: 12px; }
-
 .election-select {
     font-family: 'DM Sans', sans-serif;
     font-size: 13px;
@@ -90,8 +54,19 @@ body {
     background-position: right 10px center;
 }
 
+.breadcrumb{
+    color: #aaa;font-size:0.7rem;
+}
+
 /* CONTENT */
-.content { padding: 28px; flex: 1; }
+.content {
+    width: 100%;
+    max-width: 1400px;
+    padding: 16px 0;
+}
+@media (min-width: 640px) {
+    .content { padding: 24px 0; }
+}
 
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
 .page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
@@ -99,9 +74,12 @@ body {
 /* METRICS */
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-    margin-bottom: 28px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+@media (min-width: 1024px) {
+    .metrics-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
 .metric-card {
@@ -119,11 +97,34 @@ body {
 .metric-card.accent .metric-sub   { color: rgba(255,255,255,.6); }
 
 /* TABLE */
+/* TABLE — scroll horizontal sur mobile */
 .table-wrap {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
+}
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Cacher certaines colonnes sur mobile */
+@media (max-width: 768px) {
+    .col-tokens,
+    .col-display,
+    .col-status  { display: none; }
+
+    .question-text { max-width: 160px; }
+
+    .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .search-input { width: 100%; }
+
+    .metric-value { font-size: 22px; }
 }
 
 .table-header {
@@ -272,10 +273,9 @@ tbody td { padding: 13px 16px; font-size: 13px; vertical-align: middle; }
 
 /* PAGINATION */
 .pagination {
-    padding: 14px 20px;
-    border-top: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 12px; color: var(--muted);
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 .page-btns { display: flex; gap: 4px; }
 .page-btn {
@@ -293,21 +293,29 @@ tbody td { padding: 13px 16px; font-size: 13px; vertical-align: middle; }
 <input class="hidden peer" id="mobile-menu-toggle" type="checkbox"/>
 {{ nav(mobile_toggle_menu_id="mobile-menu-toggle", menu="monitoring") }}
 
+<header class="sticky top-0 right-0 z-40 flex justify-between items-center h-16 px-4 lg:px-8 lg:ml-[280px] bg-white/80 backdrop-blur-md shadow-sm font-inter">
+    <div class="flex items-center gap-4 flex-1">
+        <label class="lg:hidden text-slate-600 cursor-pointer p-2 hover:bg-surface-container-low rounded-lg transition-colors"
+               for="mobile-menu-toggle">
+            <span class="material-symbols-outlined">menu</span>
+        </label>
+        <div class="relative w-full max-w-xs hidden sm:block">
+            <span class="breadcrumb">Admin / <span>Monitoring</span></span>
+
+        </div>
+    </div>
+    <div class="flex items-center gap-3 lg:gap-6">
+        <select class="election-select" id="election-select" onchange="loadData()">
+            <option value="">Toutes les élections</option>
+        </select>
+    </div>
+</header>
+
 <!-- MAIN -->
-<main class="main lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden">
+<main class="main lg:ml-[280px] min-h-[calc(100vh-64px)] p-4 sm:p-6 flex flex-col items-center relative overflow-hidden">
     <div class="absolute inset-0 -z-10 opacity-5 pointer-events-none">
         <img alt="Background Texture" class="w-full h-full object-cover"
              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoAxSnvETD2D2VprXxOb6ntRaNmAYXePoQ4fNVqqb6TCsn8kPImSjKuPUgUGb5pwbkicKpy1luMpnlNKOUxjcJ9tT5agCVal2gveE8RFNDfHVsmC_XHArIjyA-HmIDN9tgzKp-Ne5XFaxZSsL6zMVDxPP-SpYZdpKf-d70P7x_NT39a8F-zgZkZyH-2GqFXmvpwog8CWInTg22OSHP3C4MTbdTje-y4i3C1oT1rROmnGXjmtG17M--HV9kfvql9wz-R7d9FekC89f_"/>
-    </div>
-    <div class="topbar w-full">
-        <div class="topbar-left">
-            <span class="breadcrumb">Admin / <span>Monitoring</span></span>
-        </div>
-        <div class="topbar-right">
-            <select class="election-select" id="election-select" onchange="loadData()">
-                <option value="">Toutes les élections</option>
-            </select>
-        </div>
     </div>
 
     <div class="content">
@@ -317,26 +325,32 @@ tbody td { padding: 13px 16px; font-size: 13px; vertical-align: middle; }
         <div class="metrics-grid" id="metrics"></div>
 
         <div class="table-wrap">
-            <div class="table-header">
-                <div class="table-title">Historique des requêtes</div>
-                <input class="search-input" type="text" placeholder="Rechercher une question..." id="search-input" oninput="filterRows()">
-            </div>
-            <table id="main-table">
-                <thead>
-                    <tr>
-                        <th>Question</th>
-                        <th>Flux outils</th>
-                        <th>SQL</th>
-                        <th>Display</th>
-                        <th>Tokens</th>
-                        <th>Latence</th>
-                        <th>Statut</th>
-                    </tr>
-                </thead>
-                <tbody id="table-body"></tbody>
-            </table>
-            <div class="pagination" id="pagination"></div>
-        </div>
+    <div class="table-header">
+        <div class="table-title">Historique des requêtes</div>
+        <input class="search-input" type="text"
+               placeholder="Rechercher une question..."
+               id="search-input" oninput="filterRows()">
+    </div>
+
+    <div class="table-scroll">  {# ← wrapper scroll #}
+        <table id="main-table">
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Flux outils</th>
+                    <th class="col-tokens">SQL</th>
+                    <th class="col-display">Display</th>
+                    <th class="col-tokens">Tokens</th>
+                    <th>Latence</th>
+                    <th class="col-status">Statut</th>
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+</div>
     </div>
 </main>
  {% endblock %}
@@ -392,8 +406,9 @@ function parseSession(s) {
         total: (meta.meta?.completion_tokens || 0) + (meta.meta?.prompt_tokens || 0),
         completion_tokens: meta.meta?.completion_tokens || null,
         prompt_tokens: meta.meta?.prompt_tokens || null
-
     };
+
+    console.log(tokenInfo, meta)
 
     // SQL errors
     const sqlErrors = toolCalls.filter(tc => tc.name === 'execute_sql_query' && tc.output?.ok === false).length;
@@ -579,16 +594,22 @@ function renderTable(sessions) {
     page.forEach(s => {
         // Row
         const tr = document.createElement('tr');
+        console.log(s);
         tr.dataset.id = s.id;
         tr.innerHTML = `
             <td><div class="question-text" title="${s.question}">${s.question}</div></td>
             <td>${renderToolFlow(s.toolCalls)}</td>
-            <td>${renderSQLBadge(s)}</td>
-            <td>${renderDisplayBadge(s.display)}</td>
-            <td><span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${s.tokenInfo ? s.tokenInfo.total + ' tok' : '—'}</span></td>
+            <td class="col-tokens">${renderSQLBadge(s)}</td>
+            <td class="col-display">${renderDisplayBadge(s.display)}</td>
+            <td class="col-tokens">
+                <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">
+                    ${s.tokenInfo.total ? s.tokenInfo.total.toLocaleString() + ' tok' : '—'}
+                </span>
+            </td>
             <td>${renderLatency(s.latency, maxLat)}</td>
-            <td><span class="badge badge-green">✓ DONE</span></td>
+            <td class="col-status"><span class="badge badge-green">✓ DONE</span></td>
         `;
+
 
         // Detail row
         const detailTr = document.createElement('tr');

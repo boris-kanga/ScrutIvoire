@@ -2,6 +2,7 @@ import contextlib
 import json
 import re
 import uuid
+from datetime import datetime
 from functools import partial
 from typing import Optional
 
@@ -23,7 +24,7 @@ from src.domain.message_broker import MessageBrokerChannel
 from io import BytesIO, IOBase
 
 from src.repository.entity_resolution import EntityResolution
-from src.utils.tools import value_parser
+from src.utils.tools import value_parser, calculer_hash
 
 REPORT_FILE_NAME = "rapport.pdf"
 
@@ -49,7 +50,7 @@ class ElectionService:
     async def get_archive_process_state(self, election_id):
         return await self.rd.get("process-" + str(election_id))
 
-    async def get_all(self):
+    async def get_all(self, with_integrity=False):
         els = await self.repo.get_all_elections()
         stats = await self.repo.get_stat(
             [e.id for e in els],
@@ -63,6 +64,10 @@ class ElectionService:
             {
                 **(stats.get(str(el.id)) or {}),
                 **el.to_dict(),
+                **({} if not with_integrity else {
+                    "integrity_status": el.doc.integrity_status,
+                    "last_integrity_check": el.doc.last_integrity_check
+                }),
                 "nat": (el.type or "").lower() in ("presidential", "referendum")
             }
             for el in els
@@ -85,8 +90,6 @@ class ElectionService:
         party_ticker = sorted(party_ticker, key=lambda r: r[1], reverse=True)
         party_ticker.append(["INDEPENDANT", independent])
         return party_ticker
-
-
 
     @staticmethod
     def text_as_canonic(text):
@@ -156,6 +159,7 @@ class ElectionService:
 
 
         # massive insert circonscriptions
+        locality_skipped = []
         for locality in extracted_locality:
             # winner - value - cords - candidates
             circonscriptions.append({
@@ -183,12 +187,16 @@ class ElectionService:
                 }
                 for r in refs
             ]
-
-            staging = LocalityStagingResult(
-                **locality["stage"],
-                election_id=election.id,
-                circonscription_id=c_ids[i],
-            )
+            print(locality["stage"], locality["value"])
+            try:
+                staging = LocalityStagingResult(
+                    **locality["stage"],
+                    election_id=election.id,
+                    circonscription_id=c_ids[i],
+                )
+            except TypeError:
+                locality_skipped.append(locality)
+                continue
 
             locality_staging.append(staging)
         await self.repo.insert_archived_staging_data(
@@ -258,7 +266,7 @@ class ElectionService:
         await self.repo.insert_archived_staging_data(
             ref_entities=ref_entities
         )
-
+        return locality_skipped
 
     async def get_report_url(self, election_id):
         return await self.storage.get_presigned_url(
@@ -281,7 +289,6 @@ class ElectionService:
 
     async def get(self, election_id):
         election = await self.repo.get(election_id)
-
         if not election:
             return None
 
@@ -312,6 +319,42 @@ class ElectionService:
         await self.repo.delete_election(election_id)
         await self.storage.delete_bucket(str(election_id))
         await self.delete_archive_process_working(election_id)
+        # CANCEL_ELECTION_PROCESS
+        if await self.rd.get(f"election:{election_id}:process_id"):
+            await self._mr.publish(
+                MessageBrokerChannel.CANCEL_ELECTION_PROCESS,
+                {
+                    "election_id": str(election_id)
+                }
+            )
+
+    async def verify_report_integrity(self, election_id):
+        el = await self.get(election_id)
+        doc = el.doc
+        if not el.doc.integrity_status:
+            return {
+                "last_integrity_check": el.doc.last_integrity_check,
+                "integrity_status": el.doc.integrity_status
+            }
+
+        async with doc.get() as filename:
+            if doc.integrity_hash == await calculer_hash(filename):
+                doc.last_integrity_check = datetime.now()
+            else:
+                doc.last_integrity_check = datetime.now()
+                doc.integrity_status = False
+            await self.repo.update_election(el)
+        return {
+            "last_integrity_check": el.doc.last_integrity_check,
+            "integrity_status": el.doc.integrity_status
+        }
+
+    async def get_integrity_status(self, election_id):
+        el = await self.get(election_id)
+        return {
+            "last_integrity_check": el.doc.last_integrity_check,
+            "integrity_status": el.doc.integrity_status
+        }
 
     async def start_archiving_process(
             self,

@@ -195,12 +195,13 @@ function createDataCard({ title, icon, columns, rows, id, style, class_}) {
                     ${rowsHtml}
                 </div>
             </div>
-            <!-- Hover Overlay -->
+            <!-- Hover Overlay
             <div class="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
                 <div class="flex flex-col items-center gap-2">
                     <span class="material-symbols-outlined text-white text-3xl">zoom_in</span>
                     <span class="text-[10px] font-bold uppercase tracking-widest text-white">Détails</span>
                 </div>
             </div>
+            -->
         </div>`;
 }

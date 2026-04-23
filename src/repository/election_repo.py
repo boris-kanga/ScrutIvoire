@@ -25,7 +25,23 @@ class ElectionRepo:
             type=_dict["type"],
             status=_dict["status"]
         )
+
         el.id = uuid.UUID(str(_dict["id"]))
+
+        if _dict.get("doc_id"):
+            el.doc = Document(
+                election_id=el.id,
+                file_name=_dict["file_name"],
+                storage_url=_dict["storage_url"],
+                integrity_hash=_dict["integrity_hash"],
+                uploaded_by=_dict["uploaded_by"],
+                file_type=_dict["file_type"],
+                uploaded_at=_dict["uploaded_at"],
+                last_integrity_check=_dict["last_integrity_check"],
+                integrity_status=_dict["integrity_status"]
+            )
+            el.doc.id = uuid.UUID(str(_dict["doc_id"]))
+
         return el
 
     async def get_election_by_status(self, status) -> List[Election]:
@@ -112,7 +128,13 @@ class ElectionRepo:
     async def get_all_elections(self):
         els = await self.db.run_query(
             """
-            SELECT * FROM elections
+            SELECT 
+            s.*, 
+            s.id as doc_id,
+            e.*
+            FROM elections e LEFT JOIN source_documents s
+                ON e.id=s.election_id
+            WHERE e.status = 'ARCHIVED'
             """
         )
         return [self._dict_to_election(el) for el in els]
@@ -199,8 +221,23 @@ class ElectionRepo:
                 election.type,
                 election.id
             ),
-
         )
+        if getattr(election, "doc", None):
+            doc = election.doc
+            await self.db.run_query(
+                """
+                UPDATE source_documents
+                SET 
+                    last_integrity_check=$1,
+                    integrity_status=$2
+                WHERE id = $3
+                """,
+                params=(
+                    doc.last_integrity_check,
+                    doc.integrity_status,
+                    doc.id
+                )
+            )
 
     async def add_election(self, election: Election):
         election.id = await self.db.insert({
