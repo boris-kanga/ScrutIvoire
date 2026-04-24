@@ -28,6 +28,9 @@ REDIS_CONFIG = {
 }
 
 
+REDIS_DB_URI='redis://{host}:{port}'.format(**REDIS_CONFIG)
+
+
 POSTGRES_DB_URI = os.environ.get("DB_URI", "postgresql://localhost/scrutivoire_db")
 
 LLM_DB_URI = os.environ.get("LLM_DB_URI", "postgresql://localhost/scrutivoire_db")
@@ -38,6 +41,9 @@ S3_CONFIG = {
     "endpoint": os.environ.get(f"S3_ENDPOINT"),
     "access_key": os.getenv("S3_ACCESS_KEY"),
     "secret_key": os.getenv("S3_SECRET_KEY"),
+    "public_url": os.getenv(
+        "S3_PUBLIC_URL", "http://localhost:9000"
+    )
 }
 
 

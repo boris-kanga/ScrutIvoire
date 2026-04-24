@@ -48,7 +48,7 @@ def db_depends(func):
                 redis_uri = current_app.config.get("REDIS_DB_URI")
                 rd_kw = {}
                 if redis_uri:
-                    rd_kw["uri"] = redis_uri
+                    rd_kw["url"] = redis_uri
                 redis_db = RedisDB(**rd_kw)
                 await redis_db.connect()
                 kw["rd"] = redis_db

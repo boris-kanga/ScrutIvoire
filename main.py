@@ -1,8 +1,14 @@
 import asyncio
+import os
 
 import click
 
-from src.domain.user import User, Role
+from src.domain.user import User, Role, UserNotFoundError
+
+from src.core.logger import setup_logging
+
+
+setup_logging()
 
 
 @click.group()
@@ -40,20 +46,24 @@ def web():
         # await pg.run_query(
         #     """delete from users"""
         # )
-        res = await user_repo.get_all(role=Role.ADMIN)
-        if not res:
-            user = User(
-                full_name="KANGA Boris Parfait",
-                email="kangaborisparfait@gmail.com",
-                role=Role.ADMIN
-            )
-            user.password_hash = "boris"
+        if os.getenv("ADMIN_USER_EMAIL"):
+            email = os.getenv("ADMIN_USER_EMAIL")
+            pwd = os.getenv("ADMIN_PASSWORD", "root")
+            try:
+                await  user_repo.get_user_by_email(email)
+            except UserNotFoundError:
+                user = User(
+                    full_name=os.getenv("ADMIN_USERNAME", "KANGA Boris"),
+                    email=email,
+                    role=Role.ADMIN
+                )
+                user.password_hash = pwd
 
-            _ = await user_repo.create_user(
-                user
-            )
-            user = await user_repo.get_user_by_email(user.email)
-            user.verify_password("boris", True)
+                _ = await user_repo.create_user(
+                    user
+                )
+                user = await user_repo.get_user_by_email(user.email)
+                user.verify_password(pwd, True)
 
         await pg.close()
 

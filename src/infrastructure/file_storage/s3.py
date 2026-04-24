@@ -1,27 +1,31 @@
 import json
+from urllib.parse import urlparse
 
 import aioboto3
 from botocore.exceptions import ClientError
 
 
 class S3StorageAdapter:
-    def __init__(self, endpoint, access_key, secret_key, region="us-east-1", public_url="", **_):
+    def __init__(self, access_key, secret_key, endpoint="", region="us-east-1", public_url="", **_):
         self.session    = aioboto3.Session()
         self.region     = region
         self.public_url = public_url.rstrip("/")
         self.config     = {
-            "endpoint_url":          endpoint,
+            "endpoint_url":          endpoint.rstrip("/"),
             "aws_access_key_id":     access_key,
             "aws_secret_access_key": secret_key,
             "region_name":           region,
         }
         # Détection automatique AWS vs MinIO/autre
-        self._is_aws = endpoint is None
+        self._is_aws = not endpoint
+
+        self._endpoint_host = urlparse(endpoint).netloc
+        self._public_host = urlparse(public_url).netloc
 
     def _object_url(self, bucket: str, key: str) -> str:
         """Construit l'URL publique d'un objet."""
         if self.public_url:
-            return f"{self.public_url}/{key}"
+            return f"{self.public_url}/{bucket}//{key}"
         elif self._is_aws:
             return f"https://{bucket}.s3.{self.region}.amazonaws.com/{key}"
         else:
@@ -95,11 +99,14 @@ class S3StorageAdapter:
                 return self._object_url(bucket, remote_name)
             else:
                 if retrieve_url:
-                    return await s3.generate_presigned_url(
+                    url = await s3.generate_presigned_url(
                         "get_object",
                         Params={"Bucket": bucket, "Key": remote_name},
                         ExpiresIn=60 * 60 * 24 * 7,  # 7 jours
                     )
+                    if self._is_aws:
+                        return url
+                    return str(url).replace(self._endpoint_host, self._public_host, 1)
             return None
 
 
@@ -193,8 +200,11 @@ class S3StorageAdapter:
     async def get_presigned_url(self, bucket, remote_name, expires=3600):
         """Génère un lien temporaire pour accéder au fichier via navigateur."""
         async with self.session.client("s3", **self.config) as s3:
-            return await s3.generate_presigned_url(
+            url = await s3.generate_presigned_url(
                 'get_object',
                 Params={'Bucket': bucket, 'Key': remote_name},
                 ExpiresIn=expires
             )
+            if self._is_aws:
+                return url
+            return str(url).replace(self._endpoint_host, self._public_host, 1)

@@ -40,7 +40,6 @@ def get_logger(name: str) -> logging.Logger:
             msg = str(msg) % args
         except (TypeError,Exception):
             msg = " ".join([str(msg), *[str(a) for a in args]])
-        print(msg, file=sys.stderr)
         return _log_(level, msg, (), **kwargs)
     setattr(log, "_log", _log)
     return log
