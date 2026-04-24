@@ -66,11 +66,14 @@
         // --- 1. LOGIQUE DE DÉCONNEXION UNIQUE ---
         const handleLogout = () => {
             console.warn("Session expirée (401). Redirection vers la page de connexion...");
-
-            // Éviter une boucle de redirection si on est déjà sur la page de login
-            if (window.location.pathname === '/Administration/Connexion') return;
-
             localStorage.removeItem('access_token');
+            // Éviter une boucle de redirection si on est déjà sur la page de login
+            if (
+                window.location.pathname.toLowerCase().includes("/administration/connexion") ||
+                window.location.pathname.includes("/auth")
+            ) return;
+
+
             // Optionnel : Effacer d'autres données sensibles ou l'état global (Redux/Zustand)
             window.location.href = '/Administration/Connexion';
         };

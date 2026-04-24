@@ -23,16 +23,19 @@ $("#login").submit((e)=>{
             setTimeout(function() {
                 $form.removeClass('is-invalid-shake');
             }, 500);
+            throw "error"
         }
         return resp.json();
     }).then(d=>{
-        localStorage.setItem("access_token", d.token);
-        localStorage.setItem("role", d.role);
-        if (window.socket){
-            window.socket.auth.token = d.token
-            //socket.disconnect().connect()
+        if (d.token){
+            localStorage.setItem("access_token", d.token);
+            localStorage.setItem("role", d.role);
+            if (window.socket){
+                window.socket.auth.token = d.token
+                //socket.disconnect().connect()
+            }
+            location.href = "/Administration"
         }
-        location.href = "/Administration"
 
     })
 })
