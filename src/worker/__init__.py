@@ -384,6 +384,8 @@ class Worker:
             #     "[Process] Parcourt des pages",
             #     room=f"processing-{election_id}"
             # )
+
+            potential_totals_lines = []
             async for page in _async_read_pdf(filename):
                 page_index  += 1
                 logger.info("[Page]", page_index)
@@ -432,6 +434,24 @@ class Worker:
                         column_cache.add(key)
                         columns_meta = await self._get_columns_from_archive(column, name)
                         if columns_meta is not None:
+                            #
+                            logger.info("On vient de detecter le tableau, le bon.")
+                            logger.info("[Column]", columns_meta)
+
+                            # intuition le premier tableau a toujours sur la premiere vrai ligne la region et localite
+                            # on donc collecter toutes les lignes qui ne donne pas ces donnees dans potential_totals_lines
+
+                            region_idx = columns_meta["idx"]["region"]
+                            locality_idx = columns_meta["idx"]["locality"]
+
+                            for i in range(index_row, len(table_rows_data)):
+                                row_content = table_rows_data[i]
+                                if not get_row_content_at_idx(
+                                    row_content, region_idx
+                                ) or not get_row_content_at_idx(row_content, locality_idx):
+                                    potential_totals_lines.append(row_content)
+                                else:
+                                    break
                             election.set(
                                 type_=columns_meta.get("election_type"),
                                 name=name
@@ -540,6 +560,15 @@ class Worker:
                             # to don't consider the table header base on index_row calculated a few top
                             last_row_y = row.bbox[1]
                             continue
+                        if any(
+                                all(
+                                    (table_data[index][i] or "").strip() == (tot_row[i] or "").strip()
+                                    for i in range(len(tot_row))
+                                )
+                                for tot_row in potential_totals_lines
+                        ):
+                            logger.info("\tline total skip")
+                            continue
 
                         if not place_row_init_y:
                             last_row_y = row.bbox[1]
@@ -577,6 +606,7 @@ class Worker:
                             r"\b(total|pourcentage|%)\b", region_raw, flags=re.IGNORECASE
                         ):
                             logger.info("\tline total skip")
+                            last_row_y = row.bbox[1]
                             continue
 
                         # ── Skip : ligne de total sur localité ──
@@ -589,7 +619,8 @@ class Worker:
                             )
                             or re.search(r"^\s*\d+[\s\d]*$", locality_raw)
                         ):
-                            logger.info("line total skip locality")
+                            logger.info("line total in locality skip")
+                            last_row_y = row.bbox[1]
                             continue
 
                         # Détecter changement de région via les séparateurs de page.rects

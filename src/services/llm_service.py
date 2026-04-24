@@ -104,21 +104,39 @@ class LLMService:
         if func_name == "get_table_evidence":
             circonscription_id = args.get("circonscription_id")
             candidate_id = args.get("candidate_id")
+            try:
+                if circonscription_id:
+                    res = await self.llm_db.run_query(
+                        """
+                        SELECT * FROM circonscriptions
+                        WHERE id=$1
+                        """, params=(circonscription_id,), limit=1
+                    )
+                    if res:
+                        source_context["circ_ids"].add(candidate_id)
+                        try:
+                            res = json.loads(res["bbox_json"])
+                            return " - ".join(f"Page {int(k)+1}" for k in res.keys()) or "Pas de source fiable"
+                        except json.decoder.JSONDecodeError:
+                            return "Pas de source fiable"
 
-            if circonscription_id:
-                return await self.llm_db.run_query(
+
+                res = await self.llm_db.run_query(
                     """
-                    SELECT * FROM circonscriptions
+                    SELECT * FROM candidates
                     WHERE id=$1
-                    """, params=(circonscription_id,)
+                    """, params=(candidate_id, ),  limit=1
                 )
-
-            return await self.llm_db.run_query(
-                """
-                SELECT * FROM candidates
-                WHERE id=$1
-                """, params=(candidate_id, )
-            )
+                if res:
+                    source_context["cand_ids"].add(candidate_id)
+                    try:
+                        res = json.loads(res["bbox_json"])
+                        return " - ".join(f"Page {int(k) + 1}" for k in
+                                          res.keys()) or "Pas de source fiable"
+                    except json.decoder.JSONDecodeError:
+                        return "Pas de source fiable"
+            except Exception:
+                return "Pas de source trouve."
         return None
 
     async def answer(self, question, options, election_id, session_id, callback):

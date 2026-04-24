@@ -9,28 +9,9 @@ from src.domain.election import Election
 
 from unittest import mock
 
+regional = "/Users/auser/Library/CloudStorage/OneDrive-Personnel/MY-CLOUD/OWN/ScrutIvoire/data/tmp/Municipales_2023.pdf"
 
-async def test_treatment_of_an_archive():
-    mock_election = Election(
-        name="", type="", status="DRAFT"
-    )
-    mock_election.id = uuid.uuid4()
-
-    mock_election.doc = mock.MagicMock()
-    a_ctx = mock_election.doc.get.return_value
-    file = os.path.join(
-        WORK_DIR, "data", "doc_example", "EDAN_2025_RESULTAT_NATIONAL_DETAILS.pdf"
-    )
-    a_ctx.__aenter__.return_value = file
-
-    socket_mock = mock.MagicMock()
-    def _print(*a, **kw):
-        print("--> in socket.emit=","args:", a, "kw:", kw)
-    socket_mock.emit = mock.AsyncMock(side_effect=_print)
-
-    llm_repo_mock = mock.MagicMock()
-
-    llm_response = {'success': True, 'result': {
+llm_resp_legislative = {'success': True, 'result': {
             'election_metadata': {'type': 'legislative', 'format': 'row',
                                   'confidence_score': 0.8},
             'mapping_index': {'region': 0, 'locality': 1,
@@ -48,6 +29,29 @@ async def test_treatment_of_an_archive():
                     'model': 'meta-llama/llama-4-scout-17b-16e-instruct',
                     'prompt_tokens': 893, 'completion_tokens': 871,
                     'latency_ms': 5564}
+
+legislative_file = os.path.join(
+        WORK_DIR, "data", "doc_example", "EDAN_2025_RESULTAT_NATIONAL_DETAILS.pdf"
+    )
+async def test_treatment_of_an_archive():
+    mock_election = Election(
+        name="", type="", status="DRAFT"
+    )
+    mock_election.id = uuid.uuid4()
+
+    mock_election.doc = mock.MagicMock()
+    a_ctx = mock_election.doc.get.return_value
+    file = regional
+    a_ctx.__aenter__.return_value = file
+
+    socket_mock = mock.MagicMock()
+    def _print(*a, **kw):
+        print("--> in socket.emit=","args:", a, "kw:", kw)
+    socket_mock.emit = mock.AsyncMock(side_effect=_print)
+
+    llm_repo_mock = mock.MagicMock()
+
+    llm_response = {'success': True, 'result': {'election_metadata': {'type': 'regional', 'format': 'row', 'confidence_score': 1.0}, 'mapping_index': {'region': 0, 'locality': 1, 'polling_stations_count': 2, 'registered_voters_male': 3, 'registered_voters_female': 4, 'registered_voters_total': 5, 'voters_male': 6, 'voters_female': 7, 'voters_total': 8, 'participation_rate': 9, 'null_ballots': 10, 'expressed_votes': 11, 'blank_ballots_count': 12, 'blank_ballots_pct': 13, 'unregistered_voters_count': -1}, 'candidate_results': {'row_mode': {'party_idx': 15, 'candidate_name_idx': 16, 'score_idx': 17, 'percent_idx': 18, 'status_idx': 19}, 'column_mode': []}}, 'tool_calls': None, 'provider': 'groq', 'model': 'meta-llama/llama-4-scout-17b-16e-instruct', 'prompt_tokens': 1206, 'completion_tokens': 255, 'latency_ms': 1478}
 
     llm_repo_mock.detect_columns = mock.AsyncMock(
         side_effect=[llm_response, {"success": False}]
