@@ -8,9 +8,12 @@ services:
     env_file:
       - config/.env
     depends_on:
-      - db
-      - redis
-      - minio
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - PYTHONUNBUFFERED=1
 
@@ -23,9 +26,12 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     depends_on:
-      - db
-      - redis
-      - minio
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -52,6 +58,11 @@ services:
       - MINIO_ROOT_USER=${S3_ACCESS_KEY}
       - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "9000:9000" # API
       - "9001:9001" # Console Web

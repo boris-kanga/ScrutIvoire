@@ -1,4 +1,3 @@
--- Activer l'extension pour générer des UUID
 
 -- 1. USERS & ROLES
 CREATE TABLE IF NOT EXISTS users  (
@@ -195,21 +194,11 @@ CREATE TABLE IF NOT EXISTS voter_registry (
 );
 
 
--- 1. Création de la fonction de contrôle
-CREATE OR REPLACE FUNCTION check_immutable_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Vérifie si la colonne spécifiée a été modifiée
-    IF NEW.integrity_hash IS DISTINCT FROM OLD.integrity_hash THEN
-        RAISE EXCEPTION 'La colonne "integrity_hash" est immuable et ne peut pas être modifiée.';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
 -- 2. Création du trigger sur le champ source_documents(integrity_hash)
-CREATE TRIGGER trigger_immutable_mon_champ
+DROP TRIGGER IF EXISTS trigger_immutable_source ON source_documents;
+CREATE TRIGGER trigger_immutable_source
 BEFORE UPDATE ON source_documents
 FOR EACH ROW
-EXECUTE FUNCTION check_immutable_column();
+EXECUTE FUNCTION check_immutable_column('integrity_hash');
 
